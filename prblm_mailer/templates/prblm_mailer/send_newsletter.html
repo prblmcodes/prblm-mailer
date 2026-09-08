@@ -1,0 +1,166 @@
+{% extends "wagtailadmin/base.html" %}
+{% load wagtailadmin_tags %}
+
+{% block titletag %}Send: {{ broadcast.subject }}{% endblock %}
+
+{% block content %}
+  {% include "wagtailadmin/shared/headers/slim_header.html" with title="Send newsletter" subtitle=broadcast.subject icon="mail" %}
+
+  {% comment %}
+    Two columns: everything actionable on the left, a sticky live preview on the
+    right — the same shape as the page editor. Wraps to a single column on narrow
+    screens (the preview drops below).
+  {% endcomment %}
+  <div class="nice-padding">
+    <div style="display:flex; gap:2.5rem; align-items:flex-start; flex-wrap:wrap;">
+
+      {# ---------------- LEFT: info + actions ---------------- #}
+      <div style="flex:1 1 460px; min-width:0;">
+
+        {% if broadcast.is_sent %}
+          <div class="help-block help-info">
+            <p>
+              Already sent on {{ broadcast.sent_at }} to
+              {{ broadcast.emails_sent }} subscriber{{ broadcast.emails_sent|pluralize }}.
+              A sent newsletter is locked so it can't go out twice. To send again,
+              duplicate it into a fresh draft:
+            </p>
+            <form method="post" action="{% url 'prblm_mailer_duplicate' broadcast.pk %}" style="margin-top:.5rem;">
+              {% csrf_token %}
+              <button type="submit" class="button">Duplicate to send again</button>
+            </form>
+          </div>
+
+          {% comment %} Who it went to — frozen at send time, as a plain table. {% endcomment %}
+          <section style="margin-bottom: 2.5rem;">
+            <h2>Audience</h2>
+            {% with rows=broadcast.sent_audience_rows %}
+              {% if rows %}
+                <table class="listing" style="width:100%; max-width:34rem;">
+                  <thead><tr><th>Group</th><th>Answer</th></tr></thead>
+                  <tbody>
+                    {% for group, answer in rows %}
+                      <tr><td>{{ group }}</td><td>{{ answer }}</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              {% elif broadcast.sent_audience == "everyone" %}
+                <p class="help">Everyone on the list.</p>
+              {% else %}
+                <p class="help">Not recorded — this went out before audiences were tracked.</p>
+              {% endif %}
+            {% endwith %}
+          </section>
+
+          {% comment %} Engagement — clicks + opens from Mailgun's tracking. {% endcomment %}
+          {% if engagement %}
+            <section style="margin-bottom: 2.5rem;">
+              <h2>Engagement</h2>
+              <table class="listing" style="width:100%; max-width:34rem;">
+                <thead><tr><th></th><th>Total</th><th>People</th><th>Rate</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td><strong>Opens</strong></td>
+                    <td>{{ engagement.opens_total }}</td>
+                    <td>{{ engagement.opens_unique }}</td>
+                    <td>{% if engagement.open_rate is not None %}{{ engagement.open_rate }}%{% else %}—{% endif %}</td>
+                  </tr>
+                  <tr>
+                    <td><strong>Clicks</strong></td>
+                    <td>{{ engagement.clicks_total }}</td>
+                    <td>{{ engagement.clicks_unique }}</td>
+                    <td>{% if engagement.click_rate is not None %}{{ engagement.click_rate }}%{% else %}—{% endif %}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {% if engagement.clicks_unattributed %}
+                <p class="help">{{ engagement.clicks_unattributed }} click{{ engagement.clicks_unattributed|pluralize }} couldn't be tied to a subscriber (sent before tracking, or an unknown address).</p>
+              {% endif %}
+              {% if engagement.top_urls %}
+                <h3 style="margin-top:1.25rem;">Top links</h3>
+                <table class="listing" style="width:100%;">
+                  <thead><tr><th>Link</th><th>Clicks</th><th>People</th></tr></thead>
+                  <tbody>
+                    {% for row in engagement.top_urls %}
+                      <tr><td style="word-break:break-all;">{{ row.url }}</td><td>{{ row.total }}</td><td>{{ row.people }}</td></tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              {% endif %}
+              <p class="help" style="margin-top:.75rem;">Needs click + open tracking enabled on your Mailgun domain, and the webhooks pointed at this site.</p>
+            </section>
+          {% endif %}
+        {% endif %}
+
+
+        {# --- send test --- #}
+        <section style="margin-bottom: 2.5rem;">
+          <h2>Send a test</h2>
+          <p class="help">A single copy to yourself, so you can check how it looks. Doesn't touch the subscriber list.</p>
+          <form method="post" style="display:flex; gap:.5rem; align-items:flex-end; flex-wrap:wrap;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="test">
+            <div>
+              <label for="test_email">Send test to</label><br>
+              <input type="email" name="test_email" id="test_email" required
+                     placeholder="you@example.com" style="min-width: 18rem;">
+            </div>
+            <button type="submit" class="button">Send test</button>
+          </form>
+        </section>
+
+        {% comment %}
+          Audience is chosen here, not in the editor: picked moments before sending, it
+          always reflects the groups that exist right now. The ticked boxes are submitted
+          *with* Proceed, so the confirmation page is built from exactly what's on screen.
+        {% endcomment %}
+        {% if not broadcast.is_sent %}
+          <section style="margin-bottom: 2.5rem;">
+            <h2>Who gets it</h2>
+            <p class="help">
+              Everything ticked = your whole list. Untick to send to fewer people.
+              You'll see the exact recipient count on the next page before anything is sent.
+            </p>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="proceed">
+              {% if group_choices %}
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:.35rem 1.5rem; margin:.75rem 0 1.25rem;">
+                  {% for choice in group_choices %}
+                    <label style="display:flex; gap:.5rem; align-items:center;">
+                      <input type="checkbox" name="groups" value="{{ choice.tag.pk }}"
+                             {% if choice.checked %}checked{% endif %}>
+                      <span>{{ choice.tag.group_name }}: <strong>{{ choice.tag.value_label }}</strong></span>
+                    </label>
+                  {% endfor %}
+                  <label style="display:flex; gap:.5rem; align-items:center;">
+                    <input type="checkbox" name="include_ungrouped"
+                           {% if include_ungrouped %}checked{% endif %}>
+                    <span>Subscribers with no group</span>
+                  </label>
+                </div>
+              {% else %}
+                <p class="help">
+                  No groups exist yet, so this goes to everyone. Groups appear once a signup
+                  form field is marked <em>Use for grouping</em>.
+                </p>
+                <input type="hidden" name="include_ungrouped" value="on">
+              {% endif %}
+              <button type="submit" class="button">Proceed to send &rarr;</button>
+            </form>
+          </section>
+        {% endif %}
+
+      </div>
+
+      {# ---------------- RIGHT: sticky live preview ---------------- #}
+      <div style="flex:1 1 380px; min-width:320px; position:sticky; top:1rem;">
+        <h2 style="margin-top:0;">Preview</h2>
+        <p class="help">How the email will look. Merge fields like the unsubscribe link fill in per recipient at send time.</p>
+        <iframe title="Newsletter preview" srcdoc="{{ preview_html }}"
+                style="width:100%; height:78vh; min-height:500px; border:1px solid #ccc; border-radius:6px; background:#fff;"></iframe>
+      </div>
+
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "wagtailadmin/base.html" %}
+{% load wagtailadmin_tags %}
+
+{% block titletag %}Confirm send: {{ broadcast.subject }}{% endblock %}
+
+{% comment %}
+  The last step before an irreversible action. A page rather than a JS confirm()
+  box: it can name every group and the exact count, Back works, and it can't fail
+  open the way a blocked dialog does.
+{% endcomment %}
+{% block content %}
+  {% include "wagtailadmin/shared/headers/slim_header.html" with title="Confirm send" subtitle=broadcast.subject icon="mail" %}
+
+  <div class="nice-padding" style="max-width: 700px;">
+
+    {% if recipient_count == 0 %}
+      <div class="help-block help-warning">
+        <p>
+          <strong>Nobody to send to.</strong>
+          The groups picked have no confirmed subscribers in them right now — remember
+          someone only counts once they've clicked the confirmation link in their signup
+          email.
+        </p>
+      </div>
+      <a href="{% url 'prblm_mailer_send' broadcast.pk %}" class="button button-secondary">
+        &larr; Back
+      </a>
+    {% else %}
+
+      <h2 style="margin-top:0;">You're about to send this newsletter</h2>
+
+      <dl style="display:grid; grid-template-columns:auto 1fr; gap:.6rem 1.5rem; margin:1.5rem 0;">
+        <dt style="font-weight:600;">Subject</dt>
+        <dd style="margin:0;">{{ broadcast.subject }}</dd>
+
+        <dt style="font-weight:600;">Going to</dt>
+        <dd style="margin:0;">
+          <strong style="font-size:1.25rem;">{{ recipient_count }}</strong>
+          confirmed subscriber{{ recipient_count|pluralize }}
+        </dd>
+
+        <dt style="font-weight:600;">Groups</dt>
+        <dd style="margin:0;">
+          {% if audience_label == "everyone" %}
+            Everyone on the list
+          {% else %}
+            <ul style="margin:0; padding-left:1.1rem;">
+              {% for tag in groups %}
+                <li>{{ tag.group_name }}: <strong>{{ tag.value_label }}</strong></li>
+              {% endfor %}
+              {% if include_ungrouped %}<li>Subscribers with no group</li>{% endif %}
+            </ul>
+          {% endif %}
+        </dd>
+      </dl>
+
+      <div class="help-block help-warning">
+        <p>This can't be undone — once sent, the newsletter is locked and the emails are gone.</p>
+      </div>
+
+      <form method="post" style="display:flex; gap:.75rem; align-items:center; margin-top:1.5rem;">
+        {% csrf_token %}
+        <a href="{% url 'prblm_mailer_send' broadcast.pk %}" class="button button-secondary">
+          &larr; Back
+        </a>
+        <button type="submit" class="button">
+          Send now to {{ recipient_count }} subscriber{{ recipient_count|pluralize }}
+        </button>
+      </form>
+
+    {% endif %}
+
+  </div>
+{% endblock %}

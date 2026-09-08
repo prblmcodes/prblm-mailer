@@ -1,0 +1,41 @@
+{% load wagtailcore_tags %}{% comment %}
+  MJML source for a broadcast email. Rendered by Django, then compiled to email
+  HTML by mrml. Comments MUST be {% comment %}, never {# #}.
+
+  The email is composed from the body blocks (mailer/blocks.py). Backgrounds are
+  inline per section (see the blocks' get_context). Fonts mirror the site
+  (Montserrat headings / Roboto body) where the client supports web fonts.
+{% endcomment %}<mjml>
+  <mj-head>
+    <mj-title>{{ broadcast.subject }}</mj-title>
+    <mj-preview>{{ broadcast.subject }}</mj-preview>
+    <mj-font name="Montserrat" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&display=swap" />
+    <mj-font name="Roboto" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" />
+    <mj-attributes>
+      <mj-all font-family="Roboto, Helvetica, Arial, sans-serif" />
+      <mj-text font-size="16px" line-height="1.6" color="#414141" />
+    </mj-attributes>
+    <mj-style>
+      .body-content h2, .body-content h3 { font-family: "Montserrat", Helvetica, Arial, sans-serif; font-weight: 700; line-height: 1.25; margin: 0 0 10px; }
+      .body-content p { margin: 0 0 12px; }
+      .body-content ul, .body-content ol { margin: 0 0 12px; padding-left: 20px; }
+      @media only screen and (max-width:480px) {
+        /* Two-column: stack, never wider than the screen. */
+        .tc-cell { display: block !important; width: 100% !important; max-width: 100% !important; box-sizing: border-box !important; }
+        .tc-img { height: 200px !important; }
+        /* Multi-column blocks (header/footer/two-column): one column, everything centred. */
+        .mcenter td, .mcenter div, .mcenter p, .mcenter h1, .mcenter h2, .mcenter h3 { text-align: center !important; }
+        .mcenter img { margin-left: auto !important; margin-right: auto !important; float: none !important; }
+        .mcenter table { margin-left: auto !important; margin-right: auto !important; float: none !important; }
+        /* Breathing room BETWEEN stacked header/footer items only — not after the
+           last one (that would add space between blocks). The two-column's single
+           column is the last child, so it gets nothing. */
+        .mcenter [class*="mj-column-per"]:not(:last-child) { padding-bottom: 14px !important; }
+      }
+    </mj-style>
+  </mj-head>
+
+  <mj-body background-color="#f4f4f5" width="680px">
+    {% for block in broadcast.body %}{% include_block block %}{% endfor %}
+  </mj-body>
+</mjml>

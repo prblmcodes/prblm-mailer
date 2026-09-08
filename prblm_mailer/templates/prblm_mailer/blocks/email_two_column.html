@@ -1,0 +1,10 @@
+{% load wagtailimages_tags %}{% image value.image width-1000 as img %}{% comment %}
+  A real two-cell table. The IMAGE cell is always first in the source, so when the
+  cells stack on mobile the image is always on TOP, then the text — whatever side
+  it's on for desktop. On desktop, image-on-right is done with direction:rtl on the
+  table (reverses the cell order); the cells reset to ltr so their content reads
+  normally. A <td> background fills its whole cell, so the image column is always
+  the same (full) height as the text column. box-sizing + fixed layout + word-break
+  keep it inside the body width on mobile.
+  (Outlook desktop tiles the td background rather than cover — no VML here.)
+{% endcomment %}<mj-section css-class="mcenter" padding="0"><mj-column padding="0"><mj-raw><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:100%;border-collapse:collapse;table-layout:fixed;direction:{% if value.image_side == 'right' %}rtl{% else %}ltr{% endif %}"><tr><td class="tc-cell tc-img" width="50%" valign="middle" background="{{ img.full_url }}" style="width:50%;box-sizing:border-box;direction:ltr;background:#f0f0f0 url('{{ img.full_url }}') center center / cover no-repeat">&nbsp;</td><td class="tc-cell" width="50%" valign="middle" bgcolor="{{ bg_fallback }}" style="width:50%;box-sizing:border-box;direction:ltr;word-break:break-word;overflow-wrap:break-word;background:{{ bg_fallback }};background:{{ bg }};padding:40px 24px">{% include "prblm_mailer/blocks/_col_text_raw.html" %}</td></tr></table></mj-raw></mj-column></mj-section>
