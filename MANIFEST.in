@@ -1,0 +1,8 @@
+# Keeps the sdist complete; the wheel gets these via [tool.setuptools.package-data].
+include README.md
+include INSTALLATION-GUIDE.md
+recursive-include prblm_mailer/templates *.html
+recursive-include prblm_mailer/static *
+recursive-exclude tests *
+global-exclude *.py[cod]
+global-exclude __pycache__/*

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prblm-mailer"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "Self-hosted Wagtail newsletter platform (Mailgun + django-newsletter + MJML)."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,6 +23,11 @@ test = ["pytest>=8", "pytest-django>=4"]
 
 [tool.setuptools.packages.find]
 include = ["prblm_mailer*"]
+
+# Templates and the admin JS are not importable modules, so a wheel drops them
+# unless they are named here — an editable install hides this by using the source tree.
+[tool.setuptools.package-data]
+prblm_mailer = ["templates/**/*.html", "static/**/*"]
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "tests.settings"

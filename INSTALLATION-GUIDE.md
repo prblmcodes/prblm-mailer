@@ -13,10 +13,13 @@ never in the plugin.
 
 ```bash
 # from the host site's project root, with its virtualenv active
-pip install -e /path/to/prblm-mailer
+pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.1.0b1"
 ```
 
 Pulls in `django-newsletter`, `django-anymail`, `mrml`, `sorl-thumbnail`.
+
+Check the [releases page](https://github.com/prblmcodes/prblm-mailer/releases) for the
+current tag, and pin it — `@main` moves under you between installs.
 
 ## 2. Settings
 

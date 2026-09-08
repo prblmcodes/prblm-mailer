@@ -26,7 +26,24 @@ Nothing here imports your project’s code; the package stands alone.
 ## 1. Install
 
 ```bash
-# in your Wagtail site's virtualenv
+# in your Wagtail site's virtualenv — latest release
+pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.1.0b1"
+```
+
+Or from the release's wheel, which needs neither git nor a build step:
+
+```bash
+pip install https://github.com/prblmcodes/prblm-mailer/releases/download/v0.1.0b1/prblm_mailer-0.1.0b1-py3-none-any.whl
+```
+
+Pin the tag, not `main` — tags are immutable, so a rebuild resolves to identical code.
+Releases are listed at
+[github.com/prblmcodes/prblm-mailer/releases](https://github.com/prblmcodes/prblm-mailer/releases).
+
+Working on the package itself? Clone it and install editable instead:
+
+```bash
+git clone https://github.com/prblmcodes/prblm-mailer.git
 pip install -e /path/to/prblm-mailer
 ```
 
