@@ -30,6 +30,24 @@ class SnippetTests(AdminBase):
         resp = self.client.get("/admin/snippets/prblm_mailer/subscriber/")
         self.assertEqual(resp.status_code, 200)
 
+    def test_subscriber_listing_offers_no_edit(self):
+        # Superuser, so this is the viewset withholding "change", not Django perms.
+        from newsletter.models import Newsletter, Subscription
+        nl = Newsletter.objects.create(slug="main", title="L", email="h@x.co", sender="X")
+        sub = Subscription.objects.create(newsletter=nl, email_field="who@x.co")
+
+        resp = self.client.get("/admin/snippets/prblm_mailer/subscriber/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotContains(resp, f"/subscriber/edit/{sub.pk}/")
+
+    def test_subscriber_edit_url_still_redirects_to_inspect(self):
+        from newsletter.models import Newsletter, Subscription
+        nl = Newsletter.objects.create(slug="main", title="L", email="h@x.co", sender="X")
+        sub = Subscription.objects.create(newsletter=nl, email_field="typed@x.co")
+
+        resp = self.client.get(f"/admin/snippets/prblm_mailer/subscriber/edit/{sub.pk}/")
+        self.assertIn(resp.status_code, (301, 302, 403))
+
     def test_broadcast_editor_loads(self):
         b = self.broadcast()
         resp = self.client.get(f"/admin/snippets/prblm_mailer/broadcast/edit/{b.pk}/")

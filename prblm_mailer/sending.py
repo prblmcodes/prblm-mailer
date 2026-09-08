@@ -9,6 +9,7 @@ their own unsubscribe link.
 it — the one safety valve dev and staging need.
 """
 import logging
+import pathlib
 import socket
 
 from django.conf import settings
@@ -269,6 +270,46 @@ def send_test(broadcast, email):
     message.send()
 
 
+def _optin_html(action, html_t, context):
+    """The HTML half of the opt-in email: ours by default, the host's if they wrote one.
+
+    django-newsletter's own subscribe.html is unstyled, so we render a branded one
+    instead — but only while nobody else has claimed that template name. A host (or
+    another app) that provides `newsletter/message/subscribe.html` has said what they
+    want the email to look like, and silently ignoring that would be the wrong kind of
+    helpful.
+    """
+    if action != "subscribe":
+        # Only the subscribe email has a styled counterpart here.
+        return html_t.render(context) if html_t else None
+
+    if html_t is not None and not _is_django_newsletter_default(html_t):
+        return html_t.render(context)
+
+    return render_to_string("prblm_mailer/optin/subscribe.html", {
+        **context,
+        "brand_color": get_setting("BRAND_COLOR"),
+        "from_name": get_setting("FROM_NAME"),
+    })
+
+
+def _is_django_newsletter_default(template):
+    """True when this template is the copy that ships inside django-newsletter.
+
+    Origin paths are a Django implementation detail, so a failure to read one means
+    "assume the host overrode it" — the conservative answer, since it keeps whatever
+    template was actually resolved.
+    """
+    try:
+        import newsletter as django_newsletter
+
+        package_dir = str(pathlib.Path(django_newsletter.__file__).resolve().parent)
+        origin = str(pathlib.Path(template.origin.name).resolve())
+    except Exception:  # noqa: BLE001
+        return False
+    return origin.startswith(package_dir)
+
+
 def send_optin(subscription, action="subscribe"):
     """Send django-newsletter's opt-in/confirmation email via the plugin's DELIVERY.
 
@@ -291,7 +332,7 @@ def send_optin(subscription, action="subscribe"):
     )
     subject = subject_t.render(context).strip()
     text = text_t.render(context)
-    html = html_t.render(context) if html_t else None
+    html = _optin_html(action, html_t, context)
 
     mode = _delivery()
     if mode == "dry_run":

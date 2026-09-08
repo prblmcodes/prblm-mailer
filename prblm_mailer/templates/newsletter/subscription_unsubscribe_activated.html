@@ -1,0 +1,12 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Unsubscribed" %}{% endblock title %}
+
+{% block body %}
+    <div class="check" style="background:#f3f4f6; color:#9aa0a6;">&#10003;</div>
+    <h1>{% trans "You've unsubscribed" %}</h1>
+    <p>{% blocktrans with title=newsletter.title %}You'll no longer receive <strong>{{ title }}</strong>. Sorry to see you go!{% endblocktrans %}</p>
+    <p class="muted">{% trans "Changed your mind? You can subscribe again any time from our site." %}</p>
+    <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+{% endblock body %}

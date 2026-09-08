@@ -15,11 +15,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .tokens import ONECLICK_MAX_AGE, SALT
 
-_PAGE = (
-    "<!doctype html><meta charset='utf-8'>"
-    "<div style='font-family:system-ui;max-width:32em;margin:4em auto;text-align:center'>{}</div>"
-)
-
 
 def _unsubscribe(pk):
     from newsletter.models import Subscription
@@ -37,28 +32,19 @@ def oneclick_unsubscribe(request, token):
     try:
         pk = signing.loads(token, salt=SALT, max_age=ONECLICK_MAX_AGE)
     except signing.SignatureExpired:
-        return HttpResponse(_PAGE.format(
-            "<p>This unsubscribe link has expired.</p>"
-            "<p>You can unsubscribe from the link in any more recent email, "
-            "or reply and ask us to remove you.</p>"
-        ), status=400)
+        return render(request, "prblm_mailer/oneclick_unsubscribe_invalid.html",
+                      {"expired": True}, status=400)
     except signing.BadSignature:
-        return HttpResponse(_PAGE.format(
-            "<p>This unsubscribe link is invalid.</p>"), status=400)
+        return render(request, "prblm_mailer/oneclick_unsubscribe_invalid.html",
+                      {"expired": False}, status=400)
 
     if request.method != "POST":
-        return HttpResponse(_PAGE.format(
-            "<p>Unsubscribe from this newsletter?</p>"
-            f"<form method='post' action='{request.path}'>"
-            "<button type='submit' style='font:inherit;padding:.6em 1.4em;cursor:pointer'>"
-            "Yes, unsubscribe me</button></form>"
-        ))
+        return render(request, "prblm_mailer/oneclick_unsubscribe.html",
+                      {"action_url": request.path})
 
     _unsubscribe(pk)
     if request.headers.get("accept", "").startswith("text/html"):
-        return HttpResponse(_PAGE.format(
-            "<p>You have been unsubscribed. "
-            "You won&rsquo;t receive any more of these emails.</p>"))
+        return render(request, "prblm_mailer/oneclick_unsubscribed.html")
     # RFC 8058 one-click: the provider just needs a 200, no body.
     return HttpResponse(status=200)
 

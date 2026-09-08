@@ -1,10 +1,15 @@
-<!doctype html>
-<meta charset="utf-8">
-<meta http-equiv="refresh" content="6; url=/">
-<title>Subscription declined</title>
-<div style="font-family:system-ui;max-width:32em;margin:4em auto;text-align:center">
-  <h1>No problem — you won't be subscribed</h1>
-  <p>We've cancelled that subscription request, and the confirmation link is no longer
-     valid. You can sign up again any time if you change your mind.</p>
-  <p style="margin-top:24px;"><a href="/">Back to homepage</a></p>
-</div>
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Subscription declined" %}{% endblock title %}
+
+{% comment %}
+  Shown after "Deny subscription" on the confirm page — someone was signed up who
+  didn't want to be. Extends the shared shell, so it inherits whatever styling the
+  host has given the other newsletter pages rather than looking like a stray.
+{% endcomment %}
+{% block body %}
+    <h1>{% trans "No problem — you won't be subscribed" %}</h1>
+    <p>{% trans "We've cancelled that subscription request, and the confirmation link is no longer valid. You can sign up again any time if you change your mind." %}</p>
+    <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+{% endblock body %}

@@ -169,6 +169,31 @@ class OptInTests(TestCase):
         Subscription.objects.create(newsletter=nl, email_field="c@x.co", subscribed=True)
         self.assertEqual([s.email for s in confirmed_subscriptions()], ["c@x.co"])
 
+    @override_settings(PRBLM_MAILER={
+        "FROM_EMAIL": "hi@x.co", "FROM_NAME": "X", "DELIVERY": "mailgun"})
+    def test_an_unsubscribed_person_is_not_sent_a_broadcast(self):
+        """The end-to-end guarantee, not just the queryset: leaving means leaving."""
+        nl = a_newsletter()
+        Subscription.objects.create(newsletter=nl, email_field="stay@x.co", subscribed=True)
+        # Set the left-the-list state with .update(): django-newsletter's save()
+        # rewrites these flags (it reads unsubscribed=False as fresh consent), so a
+        # create() here would quietly store the opposite of what the test means.
+        left = Subscription.objects.create(newsletter=nl, email_field="left@x.co")
+        Subscription.objects.filter(pk=left.pk).update(subscribed=False, unsubscribed=True)
+        # Confirmed once, then unsubscribed — the row can keep subscribed=True, so
+        # `unsubscribed` alone has to be enough to exclude them.
+        both = Subscription.objects.create(newsletter=nl, email_field="alsoleft@x.co")
+        Subscription.objects.filter(pk=both.pk).update(subscribed=True, unsubscribed=True)
+
+        broadcast = a_broadcast()
+        mail.outbox = []
+        sending.send_broadcast(broadcast.pk)
+
+        recipients = {addr for m in mail.outbox for addr in m.to}
+        self.assertIn("stay@x.co", recipients)
+        self.assertNotIn("left@x.co", recipients)
+        self.assertNotIn("alsoleft@x.co", recipients)
+
 
 class UnsubscribeTests(TestCase):
     def setUp(self):
@@ -193,3 +218,61 @@ class UnsubscribeTests(TestCase):
     def test_tampered_token_rejected(self):
         bad = reverse("prblm_mailer:oneclick_unsubscribe", args=["garbage"])
         self.assertEqual(self.client.post(bad).status_code, 400)
+
+    def test_pages_use_the_shared_styled_shell(self):
+        # The List-Unsubscribe target is as public as the confirm page; it shouldn't
+        # look like a different site.
+        self.assertContains(self.client.get(self.url), "card__body")
+        self.assertContains(self.client.post(self.url, HTTP_ACCEPT="text/html"), "card__body")
+
+    def test_invalid_token_page_is_styled_and_says_nothing_useful(self):
+        bad = reverse("prblm_mailer:oneclick_unsubscribe", args=["garbage"])
+        resp = self.client.get(bad)
+        self.assertEqual(resp.status_code, 400)
+        self.assertContains(resp, "card__body", status_code=400)
+        self.assertNotContains(resp, "expired", status_code=400)   # don't leak which failure
+
+    def test_provider_post_still_gets_a_bare_200(self):
+        # RFC 8058: the mail provider POSTs without an HTML Accept and wants no body.
+        resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.content, b"")
+
+
+@override_settings(PRBLM_MAILER={
+    "FROM_EMAIL": "hi@x.co", "FROM_NAME": "X", "BRAND_COLOR": "#123456", "DELIVERY": "mailgun",
+})
+class OptInTemplateTests(TestCase):
+    """The confirmation email is the branded one unless the host wrote their own."""
+
+    def setUp(self):
+        from newsletter.models import Newsletter, Subscription
+        self.newsletter = Newsletter.objects.create(
+            slug="main", title="The List", email="h@x.co", sender="X")
+        self.subscription = Subscription.objects.create(
+            newsletter=self.newsletter, email_field="joiner@x.co")
+
+    def test_styled_template_is_used_by_default(self):
+        from prblm_mailer.sending import send_optin
+        mail.outbox = []
+        send_optin(self.subscription)
+
+        self.assertEqual(len(mail.outbox), 1)
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn("#123456", html)                      # brand colour applied
+        self.assertIn("Confirm my subscription", html)      # our button, not the plain text
+        self.assertIn(self.subscription.subscribe_activate_url(), html)
+
+    def test_activation_link_is_absolute(self):
+        from prblm_mailer.sending import send_optin
+        mail.outbox = []
+        send_optin(self.subscription)
+        html = mail.outbox[0].alternatives[0][0]
+        self.assertIn("http", html.split('href="')[1][:8])
+
+    def test_host_override_wins(self):
+        # A host template of that name means the host has decided; don't override it.
+        from prblm_mailer.sending import _is_django_newsletter_default
+        from django.template.loader import get_template
+        tpl = get_template("prblm_mailer/optin/subscribe.html")
+        self.assertFalse(_is_django_newsletter_default(tpl.template))

@@ -1,0 +1,98 @@
+{% load i18n prblm_mailer_tags %}<!DOCTYPE html>
+{% comment %}
+  The shell behind every django-newsletter public page — confirm subscription,
+  unsubscribe, "check your inbox", activated, declined. Each of those templates
+  extends this one and fills `title`/`body`, so styling here styles them all without
+  forking any page's wording.
+
+  Overrides django-newsletter's own `newsletter/common.html`, which is a bare
+  skeleton. The CSS is inline and self-contained — these pages are opened mid-flow
+  straight from an email client, so they must not depend on the host's asset
+  pipeline, and they must not fetch webfonts the visitor didn't ask for. Add your
+  own via the `header` block if you want them.
+
+  To restyle: put your own `newsletter/common.html` in the host's template directory
+  (it wins over this one), or copy this file out of the package and edit it.
+{% endcomment %}
+{% mailer_setting "BRAND_COLOR" "#2b6cb0" as brand_color %}
+{% mailer_setting "FROM_NAME" as from_name %}
+<html lang="{{ LANGUAGE_CODE|default:"en" }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{% trans "Newsletter" %}{% endblock title %}{% if from_name %} — {{ from_name }}{% endif %}</title>
+
+    {% block page_styles %}
+    <style>
+        :root {
+            --brand: {{ brand_color }};
+            --ink: #414141; --dark: #021117; --muted: #69727d; --line: #eeeeee;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; min-height: 100vh; background: #f4f4f5;
+            font-family: Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            color: var(--ink);
+            display: flex; align-items: center; justify-content: center; padding: 24px 16px;
+        }
+        .card {
+            width: 100%; max-width: 520px; background: #fff;
+            border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+        }
+        .card__bar { background: var(--dark); padding: 22px 32px; }
+        .card__wordmark {
+            font-family: Montserrat, Arial, sans-serif; font-size: 22px; font-weight: 800;
+            letter-spacing: -.5px; color: #fff; text-decoration: none;
+        }
+        .card__body { padding: 36px 32px 40px; }
+        h1 {
+            margin: 0 0 16px; font-family: Montserrat, Arial, sans-serif;
+            font-size: 24px; font-weight: 700; color: #1f2124; line-height: 1.25;
+        }
+        p { margin: 0 0 16px; font-size: 16px; line-height: 1.6; }
+        p:last-child { margin-bottom: 0; }
+        .muted { color: var(--muted); font-size: 14px; }
+        .btn {
+            display: inline-block; margin-top: 8px; padding: 14px 32px;
+            font-family: Montserrat, Arial, sans-serif; font-size: 16px; font-weight: 600;
+            color: #fff; background: var(--brand); border: 0; border-radius: 8px;
+            text-decoration: none; cursor: pointer;
+        }
+        .btn:hover { filter: brightness(1.08); }
+        .btn-link {
+            background: none; border: 0; padding: 0; cursor: pointer;
+            color: #cc3366; text-decoration: underline; font-size: 15px; font-family: inherit;
+        }
+        .check {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 56px; height: 56px; border-radius: 50%; background: #eafaf0;
+            color: #1a9f5a; font-size: 30px; margin-bottom: 20px;
+        }
+        .actions { margin-top: 18px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+        .errors { color: #cc3366; font-size: 14px; }
+        form p { margin-bottom: 12px; }
+        input[type="email"], input[type="text"] {
+            width: 100%; padding: 12px 14px; font-size: 16px;
+            border: 1px solid #d5d8dc; border-radius: 8px; font-family: inherit;
+        }
+        label { display: block; font-weight: 500; margin-bottom: 6px; }
+        ul.errorlist { margin: 0 0 12px; padding-left: 18px; color: #cc3366; font-size: 14px; }
+    </style>
+    {% endblock page_styles %}
+    {% block header %}{% endblock header %}
+</head>
+<body>
+    <div class="card">
+        {% block card_bar %}
+            {% if from_name %}
+            <div class="card__bar">
+                <a class="card__wordmark" href="{% block home_url %}/{% endblock %}">{{ from_name }}</a>
+            </div>
+            {% endif %}
+        {% endblock card_bar %}
+        <div class="card__body">
+            {% block body %}{% endblock body %}
+        </div>
+    </div>
+</body>
+</html>

@@ -82,3 +82,83 @@ class NewsletterFormPageTests(TestCase):
         groups = [g for _, g in grouping_specs(self.page)]
         self.assertIn("Instrument", groups)        # the dropdown is kept
         self.assertNotIn("Comments", groups)       # the text field is skipped
+
+
+@override_settings(PRBLM_MAILER={"FROM_EMAIL": "hi@x.co", "FROM_NAME": "X", "DELIVERY": "mailgun"})
+class OptInFieldTests(TestCase):
+    """A form whose newsletter signup is conditional on a consent checkbox."""
+
+    def setUp(self):
+        Newsletter.objects.get_or_create(
+            slug="main", defaults={"title": "L", "email": "h@x.co", "sender": "X"})
+        root = Page.get_first_root_node()
+        self.page = NewsletterFormPage(
+            title="Contact", slug="contact",
+            collect_newsletter_subscribers=True,
+            to_address="owner@x.co", from_address="site@x.co", subject="New message",
+        )
+        root.add_child(instance=self.page)
+        GroupingFormField.objects.create(
+            page=self.page, label="Email", field_type="email", required=True, sort_order=0)
+        GroupingFormField.objects.create(
+            page=self.page, label="Keep me posted", field_type="checkbox",
+            required=False, use_for_optin=True, sort_order=1)
+
+    def _submit(self, data):
+        form_class = self.page.get_form_class()
+        form = form_class(data)
+        assert form.is_valid(), form.errors
+        return self.page.process_form_submission(form)
+
+    def test_ticked_subscribes(self):
+        self._submit({"email": "yes@x.co", "keep_me_posted": True})
+        self.assertTrue(Subscription.objects.filter(email_field="yes@x.co").exists())
+
+    def test_unticked_does_not_subscribe(self):
+        submission = self._submit({"email": "no@x.co", "keep_me_posted": False})
+        self.assertFalse(Subscription.objects.filter(email_field="no@x.co").exists())
+        # The form itself is unaffected — only the list is skipped.
+        self.assertIsNotNone(submission)
+
+    def test_unticked_sends_no_optin_email(self):
+        mail.outbox = []
+        self._submit({"email": "quiet@x.co", "keep_me_posted": False})
+        self.assertFalse(any("quiet@x.co" in m.to for m in mail.outbox))
+
+    def test_missing_answer_counts_as_declined(self):
+        # Silence is not consent: a marked field absent from cleaned_data must not subscribe.
+        from prblm_mailer.subscriptions import subscribe_from_form
+        self.assertIsNone(subscribe_from_form({"email": "absent@x.co"}, page=self.page))
+        self.assertFalse(Subscription.objects.filter(email_field="absent@x.co").exists())
+
+    def test_page_without_optin_field_subscribes_everyone(self):
+        # Existing forms must be unaffected by the feature.
+        plain = NewsletterFormPage(
+            title="Plain", slug="plain", collect_newsletter_subscribers=True,
+            to_address="owner@x.co", from_address="site@x.co", subject="s",
+        )
+        Page.get_first_root_node().add_child(instance=plain)
+        GroupingFormField.objects.create(
+            page=plain, label="Email", field_type="email", required=True, sort_order=0)
+        form_class = plain.get_form_class()
+        form = form_class({"email": "everyone@x.co"})
+        assert form.is_valid(), form.errors
+        plain.process_form_submission(form)
+        self.assertTrue(Subscription.objects.filter(email_field="everyone@x.co").exists())
+
+    def test_optin_must_be_a_checkbox(self):
+        from django.core.exceptions import ValidationError
+        field = GroupingFormField(
+            page=self.page, label="Comments", field_type="singleline",
+            use_for_optin=True, sort_order=9)
+        with self.assertRaises(ValidationError):
+            field.full_clean()
+
+    def test_non_checkbox_flagged_field_is_ignored_at_submission(self):
+        # Flagged some other way (bypassing the editor) it must not gate anything.
+        from prblm_mailer.segments import optin_field_name
+        GroupingFormField.objects.all().filter(label="Keep me posted").delete()
+        GroupingFormField.objects.create(
+            page=self.page, label="Comments", field_type="singleline",
+            use_for_optin=True, sort_order=9)
+        self.assertIsNone(optin_field_name(self.page))

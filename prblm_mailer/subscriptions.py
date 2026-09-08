@@ -58,7 +58,47 @@ def _sync_sender_identity(newsletter):
         newsletter.save(update_fields=changed)
         logger.info("Synced newsletter sender identity from settings (%s)", ", ".join(changed))
 
+    _reconcile_site_domain()
     _ensure_linked_to_current_site(newsletter)
+
+
+# Django seeds the sites framework with this placeholder. django-newsletter builds
+# every confirmation link from the Site row, so a host that never changed it mails
+# out dead https://example.com/... links.
+PLACEHOLDER_DOMAIN = "example.com"
+
+
+def _reconcile_site_domain():
+    """Point the Site row at WAGTAILADMIN_BASE_URL while it is still the placeholder.
+
+    The activation link is django-newsletter's to build, from `Site.objects.get_current()`
+    — not from anything this package renders, so `_base_url()` can't fix it the way it
+    fixes links inside a broadcast. Correcting the row itself is the only lever.
+
+    Deliberately narrow: only ever overwrites the untouched `example.com` default, so a
+    host that has set its own domain (or runs several sites) is never second-guessed.
+    """
+    from urllib.parse import urlparse
+
+    from django.contrib.sites.models import Site
+
+    base = (getattr(settings, "WAGTAILADMIN_BASE_URL", "") or "").strip()
+    if not base:
+        return
+    host = urlparse(base).netloc
+    if not host:
+        return
+
+    site = Site.objects.get_current()
+    if site.domain != PLACEHOLDER_DOMAIN or host == PLACEHOLDER_DOMAIN:
+        return
+
+    Site.objects.filter(pk=site.pk).update(domain=host, name=site.name or host)
+    Site.objects.clear_cache()
+    logger.info(
+        "Site domain was still %r — set it to %r from WAGTAILADMIN_BASE_URL, so "
+        "confirmation links resolve.", PLACEHOLDER_DOMAIN, host,
+    )
 
 
 def _ensure_linked_to_current_site(newsletter):
@@ -141,11 +181,28 @@ def _apply_groups(subscription, page, cleaned_data, groups):
         logger.exception("Could not apply subscriber groups (subscription is unaffected)")
 
 
+def _optin_declined(cleaned_data, page):
+    """True when the page has an opt-in checkbox and the submitter left it unticked.
+
+    A page with no such field subscribes every submission, exactly as before — the
+    check is opt-in itself, so adding it changes nothing for existing forms. A
+    field marked as the opt-in but missing from `cleaned_data` counts as declined:
+    silence is not consent.
+    """
+    from .segments import optin_field_name
+
+    field_name = optin_field_name(page)
+    if field_name is None:
+        return False
+    return not cleaned_data.get(field_name, False)
+
+
 def subscribe_from_form(cleaned_data, page=None, groups=None):
     """Add the submitter to the newsletter list with double opt-in.
 
     `page` is the form page, used only to read which of its fields are marked as
-    subscriber groups. `groups` is an explicit `[(group, answer), …]` for callers
+    subscriber groups or as the opt-in checkbox — a page carrying an opt-in field
+    that the submitter left unticked is skipped entirely. `groups` is an explicit `[(group, answer), …]` for callers
     with no form fields to read. Both optional, so an existing caller that passes
     neither behaves exactly as before.
 
@@ -155,6 +212,12 @@ def subscribe_from_form(cleaned_data, page=None, groups=None):
     """
     try:
         from newsletter.models import Subscription
+
+        if _optin_declined(cleaned_data, page):
+            # They filled the form but left the consent box unticked. Their
+            # submission is still stored and notified by the form page itself;
+            # only the list is skipped.
+            return None
 
         email = _find_email(cleaned_data)
         if not email:

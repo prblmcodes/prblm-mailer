@@ -1,0 +1,18 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Link no longer works" %}{% endblock title %}
+
+{% comment %}
+  Both failure modes land here — an expired token and a tampered one. The copy
+  never says which: an attacker probing tokens learns nothing, and the person who
+  just wants out gets the same useful next step either way.
+{% endcomment %}
+{% block body %}
+    <h1>{% if expired %}{% trans "This unsubscribe link has expired" %}{% else %}{% trans "This unsubscribe link isn't valid" %}{% endif %}</h1>
+    {% if expired %}
+        <p>{% trans "Unsubscribe links stop working after a while, for your security." %}</p>
+    {% endif %}
+    <p>{% trans "Use the unsubscribe link in any more recent email, or reply to one and ask us to remove you." %}</p>
+    <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+{% endblock body %}

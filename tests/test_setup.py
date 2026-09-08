@@ -23,10 +23,25 @@ class UrlBundleTests(SimpleTestCase):
         self.assertEqual(len(bundle.urlpatterns), 3)
 
 
-class ChecksTests(SimpleTestCase):
+class ChecksTests(TestCase):
+    # TestCase, not SimpleTestCase: the Site-domain check reads the sites table, and
+    # a Site left in Django's SITE_CACHE by another test would otherwise decide the
+    # result of "fully configured".
     def test_ok_when_configured(self):
-        with override_settings(SITE_ID=1, WAGTAILADMIN_BASE_URL="http://x"):
+        from django.contrib.sites.models import Site
+        Site.objects.filter(pk=1).update(domain="configured.example.org")
+        Site.objects.clear_cache()
+        with override_settings(
+            SITE_ID=1, WAGTAILADMIN_BASE_URL="http://x", NEWSLETTER_USE_HTTPS=False,
+        ):
             self.assertEqual(check_prblm_mailer_settings(None), [])
+
+    def test_warning_when_https_links_on_an_http_site(self):
+        with override_settings(
+            SITE_ID=1, WAGTAILADMIN_BASE_URL="http://localhost:8000", NEWSLETTER_USE_HTTPS=True,
+        ):
+            ids = [i.id for i in check_prblm_mailer_settings(None)]
+        self.assertIn("prblm_mailer.W003", ids)
 
     def test_error_without_site_id(self):
         with override_settings(SITE_ID=None):
@@ -51,3 +66,33 @@ class BaseUrlFallbackTests(TestCase):
             url = absolute_url("/mailer/x/")
         self.assertTrue(url.startswith("http"))     # a real absolute URL, not a crash
         self.assertTrue(url.endswith("/mailer/x/"))
+
+
+class SiteDomainTests(TestCase):
+    """The opt-in link is built from the Site row, so a placeholder domain breaks it."""
+
+    def test_warns_while_domain_is_the_placeholder(self):
+        from django.contrib.sites.models import Site
+        Site.objects.filter(pk=1).update(domain="example.com")
+        Site.objects.clear_cache()
+        with override_settings(SITE_ID=1, WAGTAILADMIN_BASE_URL="https://real.example.org"):
+            ids = [i.id for i in check_prblm_mailer_settings(None)]
+        self.assertIn("prblm_mailer.W002", ids)
+
+    def test_placeholder_is_corrected_from_base_url(self):
+        from django.contrib.sites.models import Site
+        from prblm_mailer.subscriptions import _reconcile_site_domain
+        Site.objects.filter(pk=1).update(domain="example.com")
+        Site.objects.clear_cache()
+        with override_settings(SITE_ID=1, WAGTAILADMIN_BASE_URL="http://localhost:8000"):
+            _reconcile_site_domain()
+        self.assertEqual(Site.objects.get(pk=1).domain, "localhost:8000")
+
+    def test_a_real_domain_is_never_overwritten(self):
+        from django.contrib.sites.models import Site
+        from prblm_mailer.subscriptions import _reconcile_site_domain
+        Site.objects.filter(pk=1).update(domain="chosen.example.org")
+        Site.objects.clear_cache()
+        with override_settings(SITE_ID=1, WAGTAILADMIN_BASE_URL="http://localhost:8000"):
+            _reconcile_site_domain()
+        self.assertEqual(Site.objects.get(pk=1).domain, "chosen.example.org")

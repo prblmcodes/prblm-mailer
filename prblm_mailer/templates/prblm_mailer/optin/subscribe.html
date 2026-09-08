@@ -1,0 +1,99 @@
+{% load i18n %}<!DOCTYPE html>
+{% comment %}
+The confirmation ("please confirm your subscription") email.
+
+django-newsletter's own version of this is unstyled plain HTML; this one matches the
+newsletter's look — brand colour, the same Montserrat/Helvetica stack the MJML blocks
+use — so the first email a subscriber ever gets isn't the ugliest one.
+
+Hand-written email-safe HTML rather than MJML: it is a single centred card, and MJML
+would mean compiling on every signup for no visual gain. Tables, inline styles and no
+web fonts, because that is what mail clients agree on.
+
+Context is django-newsletter's (`newsletter`, `subscription`, `site`, `site_url`), plus
+`brand_color` and `from_name` added by prblm_mailer.sending.send_optin.
+
+To restyle: copy this file to your own
+`templates/newsletter/message/subscribe.html` — a host template of that name wins over
+both this and django-newsletter's.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% blocktrans with title=newsletter.title %}Subscription to {{ title }}{% endblocktrans %}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f4f5;">
+  <!-- Preheader: shown in the inbox preview, hidden in the body. -->
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
+    {% trans "One click to confirm your subscription." %}
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+         style="background-color:#f4f4f5;padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0"
+               style="max-width:600px;width:100%;background-color:#ffffff;border-radius:8px;
+                      font-family:Montserrat,Helvetica,Arial,sans-serif;">
+
+          <tr>
+            <td style="background-color:{{ brand_color }};border-radius:8px 8px 0 0;padding:20px 24px;"
+                align="center">
+              <span style="color:#ffffff;font-size:20px;font-weight:700;line-height:1.3;">
+                {{ newsletter.title }}
+              </span>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:28px 24px 8px;color:#1f2933;font-size:16px;line-height:1.6;">
+              <p style="margin:0 0 16px;">
+                {% blocktrans with name=subscription.name|default:_("there") %}Hi {{ name }},{% endblocktrans %}
+              </p>
+              <p style="margin:0 0 16px;">
+                {% blocktrans with title=newsletter.title %}You (or someone using your address) asked to subscribe to {{ title }}. Confirm below and you're on the list.{% endblocktrans %}
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td align="center" style="padding:8px 24px 24px;">
+              <!-- Bulletproof-ish button: a padded link, no background image. -->
+              <a href="{{ site_url }}{{ subscription.subscribe_activate_url }}"
+                 style="display:inline-block;padding:14px 28px;background-color:{{ brand_color }};
+                        color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;
+                        border-radius:6px;">
+                {% trans "Confirm my subscription" %}
+              </a>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:0 24px 24px;color:#52606d;font-size:13px;line-height:1.6;">
+              <p style="margin:0 0 8px;">
+                {% trans "If the button doesn't work, paste this into your browser:" %}
+              </p>
+              <p style="margin:0;word-break:break-all;">
+                <a href="{{ site_url }}{{ subscription.subscribe_activate_url }}"
+                   style="color:{{ brand_color }};">{{ site_url }}{{ subscription.subscribe_activate_url }}</a>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="border-top:1px solid #e4e7eb;padding:18px 24px 24px;color:#7b8794;
+                       font-size:12px;line-height:1.6;">
+              <p style="margin:0 0 6px;">
+                {% trans "Didn't ask for this? Ignore this email — nothing happens without that click." %}
+              </p>
+              <p style="margin:0;">{{ from_name|default:newsletter.sender }}</p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

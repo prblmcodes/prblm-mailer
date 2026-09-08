@@ -63,7 +63,15 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
 - `form_pages.py` — optional host helpers: `NewsletterFormMixin` (adds "Collect newsletter
   subscribers" toggle + `process_form_submission` double-opt-in) and
   `AbstractGroupingFormField` (adds "Use for grouping" + `group_name` + `resolved_group_name`;
-  `clean()` rejects grouping on non-choice fields).
+  `clean()` rejects grouping on non-choice fields, and `use_for_optin` on non-checkbox ones).
+- **Conditional signup (0.2.0b1):** a `checkbox` field ticked "Use as the newsletter opt-in"
+  gates subscribing — ticked subscribes, unticked (or absent: silence isn't consent) skips the
+  list while the submission itself still saves and notifies. Enforced in
+  `subscriptions._optin_declined` (so *every* caller of `subscribe_from_form` gets it, not just
+  the mixin); the field is found by `segments.optin_field_name`, duck-typed like grouping.
+  Checkbox-only because it is the one field type with an unambiguous "no". Pages with no such
+  field behave exactly as before. **Adds a field to an abstract base → hosts must
+  `makemigrations` on upgrade.**
 - `audience.py` — `resolve(broadcast)` (confirmed subs, narrowed by chosen groups) + `describe`.
 - `signals.py` — Anymail webhook receiver: records clicks/opens (`EngagementEvent`, deduped on
   Mailgun event id, test-sends ignored), auto-unsubscribes hard bounces/complaints, IP-scrub
@@ -75,7 +83,11 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
   `simulate_mailgun_click` (post a real signed click webhook locally), `import_subscribers` /
   `export_subscribers` (CSV).
 - `checks.py` — Django system checks: `E001` if `SITE_ID` missing, `W001` if
-  `WAGTAILADMIN_BASE_URL` unset.
+  `WAGTAILADMIN_BASE_URL` unset, `W002` if the Site domain is still `example.com`, `W003` if
+  `NEWSLETTER_USE_HTTPS` is on for an http base URL.
+- `csv_io.py` — one implementation of the subscriber CSV rules (`export_rows`, `import_rows`,
+  `parse_groups`), shared by the management commands and the admin's Import/Export buttons so
+  the two can't drift on consent semantics.
 - `urls.py` (this package's routes, namespaced `prblm_mailer`), `urls_bundle.py` (one include
   that mounts `/mailer/`, `/newsletter/`, `/anymail/`).
 - `__init__.py` — `with_required_apps(INSTALLED_APPS)` / `required_apps()` (import-light; safe
@@ -130,15 +142,50 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
 - **Always run on both Wagtail versions** before trusting a change (use two virtualenvs, one
   with Wagtail 6.x, one with 7.x). Current count: ~70 tests, green on both.
 
+## 0.2.0b1 changes (this round)
+- **Conditional signup** — see `form_pages.py` above.
+- **Site domain self-heal** — `subscriptions._reconcile_site_domain()` copies the host from
+  `WAGTAILADMIN_BASE_URL` into the Site row *only while it is still the `example.com`
+  placeholder*. The opt-in link is django-newsletter's, built from `Site.objects.get_current()`
+  — `_base_url()` can't reach it, so correcting the row is the only lever.
+- **Styled opt-in email** — `templates/prblm_mailer/optin/subscribe.html`, rendered by
+  `sending._optin_html()`. It defers to `newsletter/message/subscribe.html` when a host (or
+  another app) provides one; `_is_django_newsletter_default()` decides by template origin path.
+- **One-click unsubscribe pages** — `views.oneclick_unsubscribe` rendered inline HTML strings;
+  now three templates under `prblm_mailer/` extending the same shell. The invalid/expired page
+  deliberately doesn't say which of the two it was.
+- **Styled public pages** — ported from bemore's own overrides (`bemore/templates/newsletter/`):
+  a `common.html` shell plus `subscription_activate`, `_subscribe_activated`,
+  `_unsubscribe_activated`, and both `_email_sent` pages; `prblm_mailer/subscription_denied.html`
+  now extends the shell too. The activate page is the substantive one: it posts
+  `user_activation_code` via `.as_hidden` (the stock template puts that random string in a
+  visible text box), short-circuits to "already confirmed"/"already unsubscribed" when the
+  link is re-used, and wires the existing `prblm_mailer:deny_subscription` view to a Deny
+  button. Generic where bemore was not: wordmark is `FROM_NAME`, accent is `BRAND_COLOR`, no
+  Google Fonts fetch. Reads settings via `templatetags/prblm_mailer_tags.py` (`mailer_setting`),
+  because those views' context is django-newsletter's. Depends on `prblm_mailer` preceding
+  `newsletter` in INSTALLED_APPS — `with_required_apps` orders it that way.
+- **`W004` URL-ordering check** — the bundle mounted *below* `include(wagtail_urls)` is
+  swallowed by Wagtail's catch-all `^((?:[\w\-]+/)*)$`. Diabolical symptom: the activation
+  link works (it holds an email address, so `@`/`.` miss the catch-all) but the
+  activation-completed page it redirects to 404s. The check resolves the real URL and names
+  whichever module answered; `tests/urls_shadowed.py` reproduces the misordering.
+- **Subscribers admin** — Import/Export CSV header buttons (`admin_views.export_subscribers` /
+  `import_subscribers`), and the Edit button is gone. Removing it needed `get_edit_url() -> None`
+  on the index *and* inspect views: a permission-policy override worked on Wagtail 7 but not 6,
+  which the cross-version run caught. `SubscriberEditView`'s redirect stays as the URL guard.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
   JS — an editable install hides this because it reads the source tree. Verify after any
-  packaging change by building and counting: the wheel must contain 11 templates + 1 JS.
-- Optional niceties discussed but not built: a **styled default opt-in template**, a **startup
-  check** warning if the Site domain is still `example.com`, a **StreamField signup block** +
-  public subscribe view, **async sending** for very large lists, a **preference centre**, a
+  packaging change by building and counting: the wheel must contain every template + 1 JS
+  (22 templates at 0.2.0b1).
+- Optional niceties discussed but not built: a **StreamField signup block** + public
+  subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.
+- **Wagtail 8 / Django 6 both shipped** and `pyproject.toml` excludes them (`wagtail<8`,
+  `Django<5.3`). Nothing is known to break; the bounds have simply not been tested or widened.
 
 ## Style
 Match the surrounding code: terse, purposeful comments that explain *why* (the existing code

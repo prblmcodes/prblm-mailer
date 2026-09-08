@@ -24,6 +24,10 @@ MAX_LABEL = 160
 # submission — thousands of useless groups. Choice fields keep groups finite.
 CHOICE_FIELD_TYPES = {"dropdown", "radio", "checkboxes", "multiselect"}
 
+# The opt-in field is a single checkbox: it is the one field type with an
+# unambiguous "no" (left unticked), which is what consent has to hinge on.
+OPTIN_FIELD_TYPE = "checkbox"
+
 # Namespace for the signup block's group token (see sign_group).
 GROUP_SALT = "prblm_mailer.segments.group"
 
@@ -73,6 +77,25 @@ def grouping_specs(page):
         # so a text field can never explode the group list.
         and getattr(f, "field_type", "") in CHOICE_FIELD_TYPES
     ]
+
+
+def optin_field_name(page):
+    """The `clean_name` of the page's newsletter opt-in checkbox, or None.
+
+    Duck-typed like `grouping_specs`, for the same reason: the page belongs to the
+    host site. First marked field wins — two consent fields is a mistake, and
+    guessing between them would be worse than being predictable.
+    """
+    if page is None:
+        return None
+    try:
+        fields = page.form_fields.all()
+    except AttributeError:
+        return None
+    for f in fields:
+        if getattr(f, "use_for_optin", False) and getattr(f, "field_type", "") == OPTIN_FIELD_TYPE:
+            return f.clean_name
+    return None
 
 
 def _values(raw):

@@ -1,0 +1,11 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Check your inbox" %}{% endblock title %}
+
+{% block body %}
+    <h1>{% trans "Almost there — check your inbox" %}</h1>
+    <p>{% blocktrans with title=newsletter.title %}We've emailed you a link to confirm your subscription to <strong>{{ title }}</strong>. Click it and you're on the list.{% endblocktrans %}</p>
+    <p class="muted">{% trans "Nothing yet? Give it a minute, then check your spam folder — confirmation emails often land there." %}</p>
+    <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+{% endblock body %}

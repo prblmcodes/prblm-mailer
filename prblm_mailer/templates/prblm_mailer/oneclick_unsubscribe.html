@@ -1,0 +1,19 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "Unsubscribe" %}{% endblock title %}
+
+{% comment %}
+  The RFC 8058 one-click target, reached from the List-Unsubscribe link a mail
+  client shows next to the sender. GET only ever asks — scanners and link
+  prefetchers fetch header URLs, and must not be able to unsubscribe someone who
+  never clicked anything. The POST below is what actually removes them.
+{% endcomment %}
+{% block body %}
+    <h1>{% trans "Unsubscribe from this newsletter?" %}</h1>
+    <p>{% trans "You'll stop receiving these emails. You can subscribe again any time." %}</p>
+    <form method="post" action="{{ action_url }}" style="margin-top:24px;">
+        {% csrf_token %}
+        <button type="submit" class="btn">{% trans "Yes, unsubscribe me" %}</button>
+    </form>
+{% endblock body %}

@@ -1,0 +1,70 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% if action == "unsubscribe" %}{% trans "Unsubscribe" %}{% else %}{% trans "Confirm subscription" %}{% endif %}{% endblock title %}
+
+{% block body %}
+    {% comment %}
+      The page the link in the email lands on. Two things the stock template gets
+      wrong for a real audience:
+
+      • It renders the whole form, so the activation code — a long random string the
+        visitor has no use for and must not edit — sits in a text box. Posting it as
+        a hidden field keeps the round-trip intact and takes it off the screen.
+      • It re-offers the form even when the subscription is already in the target
+        state, so a re-used link looks like it failed. `form.instance` is the
+        Subscription (set by the view), so we can say "already done" instead.
+    {% endcomment %}
+    {% if action == "unsubscribe" and form.instance.unsubscribed %}
+        <h1>{% trans "Already unsubscribed" %}</h1>
+        <p>{% blocktrans with title=newsletter.title %}You're no longer subscribed to {{ title }} — nothing more to do.{% endblocktrans %}</p>
+        <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+
+    {% elif action != "unsubscribe" and form.instance.subscribed and not form.instance.unsubscribed %}
+        <div class="check">&#10003;</div>
+        <h1>{% trans "Already confirmed" %}</h1>
+        <p>{% blocktrans with title=newsletter.title %}Your subscription to <strong>{{ title }}</strong> is already active — nothing more to do.{% endblocktrans %}</p>
+        <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+
+    {% else %}
+        {% if action == "unsubscribe" %}
+            <h1>{% blocktrans with title=newsletter.title %}Unsubscribe from {{ title }}?{% endblocktrans %}</h1>
+            <p>{% blocktrans with email=form.email_field.value %}You're about to stop receiving emails at <strong>{{ email }}</strong>. You can resubscribe any time.{% endblocktrans %}</p>
+        {% else %}
+            <h1>{% blocktrans with title=newsletter.title %}Confirm your subscription to {{ title }}{% endblocktrans %}</h1>
+            <p>{% blocktrans with email=form.email_field.value %}You're one click away. Confirm <strong>{{ email }}</strong> and you'll start receiving the newsletter.{% endblocktrans %}</p>
+        {% endif %}
+
+        <form enctype="multipart/form-data" method="post" action="." style="margin-top:24px;">
+            {% csrf_token %}
+            {{ form.user_activation_code.as_hidden }}
+            {% if form.user_activation_code.errors %}
+                <p class="errors">{{ form.user_activation_code.errors|join:" " }}</p>
+            {% endif %}
+            <button type="submit" class="btn">
+                {% if action == "unsubscribe" %}{% trans "Yes, unsubscribe me" %}{% else %}{% trans "Confirm subscription" %}{% endif %}
+            </button>
+        </form>
+
+        {% comment %}
+          Secondary actions differ by flow:
+          • subscribe — "Deny" deletes the pending signup and kills this link (for
+            someone typed in by mistake, or by someone else); "Cancel" changes
+            nothing and leaves the link usable later.
+          • unsubscribe — only a "keep me subscribed" way out.
+        {% endcomment %}
+        <div class="actions">
+            {% if action != "unsubscribe" %}
+                <form method="post" action="{% url 'prblm_mailer:deny_subscription' %}" style="margin:0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="email" value="{{ form.instance.email_field }}">
+                    <input type="hidden" name="code" value="{{ form.instance.activation_code }}">
+                    <button type="submit" class="btn-link">{% trans "Deny subscription" %}</button>
+                </form>
+            {% endif %}
+            <a href="/" style="color:#69727d; text-decoration:underline; font-size:15px;">
+                {% if action == "unsubscribe" %}{% trans "No, keep me subscribed" %}{% else %}{% trans "Cancel" %}{% endif %}
+            </a>
+        </div>
+    {% endif %}
+{% endblock body %}

@@ -1,0 +1,55 @@
+{% extends "wagtailadmin/base.html" %}
+{% load wagtailadmin_tags %}
+
+{% block titletag %}Import subscribers{% endblock %}
+
+{% comment %}
+  The admin twin of `manage.py import_subscribers`. The consent checkbox is the
+  only real decision on this page, so it gets the warning styling rather than
+  sitting quietly among the fields.
+{% endcomment %}
+{% block content %}
+  {% include "wagtailadmin/shared/headers/slim_header.html" with title="Import subscribers" subtitle=newsletter.title icon="group" %}
+
+  <div class="nice-padding" style="max-width: 700px;">
+    <form method="POST" enctype="multipart/form-data" novalidate>
+      {% csrf_token %}
+
+      <p>
+        Upload a CSV with an <code>email</code> column. <code>name</code> and
+        <code>groups</code> are optional; anything else is ignored. Groups look like
+        <code>Instrument: Guitar; City: Leeds</code> — the format the export writes, so a
+        file exported here re-imports unchanged.
+      </p>
+
+      <div style="margin: 1.5em 0;">
+        <label class="w-block" for="csv_file"><strong>CSV file</strong></label>
+        <input type="file" name="csv_file" id="csv_file" accept=".csv,text/csv" required>
+      </div>
+
+      <div class="help-block help-warning">
+        <p>
+          <label>
+            <input type="checkbox" name="confirmed" id="confirmed">
+            <strong>These people have already consented to receive this newsletter.</strong>
+          </label>
+        </p>
+        <p>
+          Leave this unticked and everyone imports as <strong>pending</strong> — on the list,
+          but never emailed until they confirm for themselves. Tick it only for a list whose
+          consent you actually hold; it marks them confirmed immediately, and they will
+          receive the next newsletter you send.
+        </p>
+        <p>
+          Either way, <strong>no confirmation emails are sent by this import</strong>.
+          Mailing a freshly imported list in one go is the fastest way to get a sending
+          domain blocked.
+        </p>
+      </div>
+
+      <button type="submit" class="button">Import</button>
+      <a href="{% url 'wagtailsnippets_prblm_mailer_subscriber:list' %}"
+         class="button button-secondary">Cancel</a>
+    </form>
+  </div>
+{% endblock %}

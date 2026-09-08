@@ -1,0 +1,12 @@
+{% extends "newsletter/common.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "You're subscribed" %}{% endblock title %}
+
+{% block body %}
+    <div class="check">&#10003;</div>
+    <h1>{% trans "You're all set!" %}</h1>
+    <p>{% blocktrans with title=newsletter.title %}Your subscription to <strong>{{ title }}</strong> is confirmed. Keep an eye on your inbox.{% endblocktrans %}</p>
+    <p class="muted">{% trans "Every newsletter includes a one-click unsubscribe link, so you can leave any time." %}</p>
+    <p style="margin-top:24px;"><a href="/" class="btn">{% trans "Back to homepage" %}</a></p>
+{% endblock body %}

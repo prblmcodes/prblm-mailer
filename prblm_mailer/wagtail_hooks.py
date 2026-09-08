@@ -5,8 +5,11 @@ from django.shortcuts import redirect
 from django.urls import path, reverse
 from wagtail import hooks
 from wagtail.admin.action_menu import ActionMenuItem
+from wagtail.admin.widgets import HeaderButton
 from wagtail.snippets.models import register_snippet
-from wagtail.snippets.views.snippets import CreateView, EditView, SnippetViewSet
+from wagtail.snippets.views.snippets import (
+    CreateView, EditView, IndexView, InspectView, SnippetViewSet,
+)
 
 from . import admin_views
 from .models import Broadcast, Subscriber
@@ -74,6 +77,44 @@ class BroadcastViewSet(SnippetViewSet):
 register_snippet(BroadcastViewSet)
 
 
+class _NoEditUrl:
+    """Report that subscribers have no edit URL, so no view offers one.
+
+    Wagtail builds the Edit button *and* the listing's title link from
+    `get_edit_url`, and it does so in both Wagtail 6 and 7 — where the permission
+    policy alone is read differently between the two. Returning None removes the
+    button everywhere without version-specific code; `SubscriberEditView` still
+    guards the URL itself for anyone who types it.
+    """
+
+    def get_edit_url(self, *args, **kwargs):
+        return None
+
+
+class SubscriberIndexView(_NoEditUrl, IndexView):
+    """Adds Import/Export to the listing header.
+
+    The CSV pair existed only as management commands, which the people who actually
+    curate a mailing list rarely have a shell for.
+    """
+
+    def get_header_buttons(self):
+        buttons = super().get_header_buttons()
+        buttons.append(HeaderButton(
+            "Import CSV", url=reverse("prblm_mailer_import_subscribers"),
+            icon_name="upload", priority=20,
+        ))
+        buttons.append(HeaderButton(
+            "Export CSV", url=reverse("prblm_mailer_export_subscribers"),
+            icon_name="download", priority=30,
+        ))
+        return buttons
+
+
+class SubscriberInspectView(_NoEditUrl, InspectView):
+    pass
+
+
 class SubscriberEditView(EditView):
     """Subscribers aren't hand-edited — editing would corrupt the opt-in/confirm
     state — so any edit request redirects to the read-only inspect view."""
@@ -95,6 +136,8 @@ class SubscriberViewSet(SnippetViewSet):
     inspect_view_enabled = True
     copy_view_enabled = False
     edit_view_class = SubscriberEditView
+    index_view_class = SubscriberIndexView
+    inspect_view_class = SubscriberInspectView
     inspect_view_fields = [
         "email_field", "name_field", "status_label", "groups_label",
         "subscribe_date", "unsubscribe_date", "create_date",
@@ -126,6 +169,8 @@ def register_send_url():
         path("newsletters/<int:pk>/send/", admin_views.send_newsletter, name="prblm_mailer_send"),
         path("newsletters/<int:pk>/send/confirm/", admin_views.confirm_send, name="prblm_mailer_confirm"),
         path("newsletters/<int:pk>/duplicate/", admin_views.duplicate_newsletter, name="prblm_mailer_duplicate"),
+        path("subscribers/export/", admin_views.export_subscribers, name="prblm_mailer_export_subscribers"),
+        path("subscribers/import/", admin_views.import_subscribers, name="prblm_mailer_import_subscribers"),
     ]
 
 

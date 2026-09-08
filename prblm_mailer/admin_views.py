@@ -146,3 +146,87 @@ def duplicate_newsletter(request, pk):
     copy = original.duplicate()
     messages.success(request, f"Duplicated as “{copy.subject}”. Edit and send it below.")
     return redirect(reverse("wagtailsnippets_prblm_mailer_broadcast:edit", args=[copy.pk]))
+
+
+@require_admin_access
+def export_subscribers(request):
+    """Stream the subscriber list as a CSV download.
+
+    Streamed rather than built in memory: the same view has to serve a list of
+    fifty and a list of fifty thousand.
+    """
+    import csv
+
+    from django.http import Http404, StreamingHttpResponse
+    from django.utils import timezone
+
+    from .csv_io import export_rows, resolve_newsletter
+
+    newsletter = resolve_newsletter()
+    if newsletter is None:
+        raise Http404("No newsletter list configured.")
+
+    class _Echo:
+        """A file-like object that returns what it is handed — csv.writer writes
+        into this, and each row goes straight out to the client."""
+
+        def write(self, value):
+            return value
+
+    writer = csv.writer(_Echo())
+    filename = f"subscribers-{newsletter.slug}-{timezone.now():%Y%m%d}.csv"
+    response = StreamingHttpResponse(
+        (writer.writerow(row) for row in export_rows(newsletter)),
+        content_type="text/csv",
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@require_admin_access
+def import_subscribers(request):
+    """Upload a CSV of subscribers. Same rules as the management command.
+
+    Consent is the whole story here: rows land pending unless the uploader
+    explicitly states they already hold consent, and no opt-in emails are sent
+    either way (see `csv_io.import_rows`).
+    """
+    import io
+
+    from django.http import Http404
+
+    from .csv_io import import_rows, resolve_newsletter
+
+    newsletter = resolve_newsletter()
+    if newsletter is None:
+        raise Http404("No newsletter list configured.")
+
+    if request.method == "POST":
+        upload = request.FILES.get("csv_file")
+        if upload is None:
+            messages.error(request, "Choose a CSV file to import.")
+            return redirect(reverse("prblm_mailer_import_subscribers"))
+
+        confirmed = request.POST.get("confirmed") == "on"
+        try:
+            text = io.TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
+            created, updated, skipped, bad = import_rows(
+                text, newsletter, confirmed=confirmed)
+        except UnicodeDecodeError:
+            messages.error(request, "That file isn't UTF-8 text — export it as CSV and retry.")
+            return redirect(reverse("prblm_mailer_import_subscribers"))
+        except Exception as exc:  # noqa: BLE001 — a bad CSV must not 500 the admin
+            messages.error(request, f"Import failed: {exc}")
+            return redirect(reverse("prblm_mailer_import_subscribers"))
+
+        state = "confirmed" if confirmed else "pending (they must still confirm)"
+        messages.success(
+            request,
+            f"Imported as {state}: {created} new, {updated} already on the list, "
+            f"{skipped} skipped.",
+        )
+        if bad:
+            messages.warning(request, "Skipped invalid addresses: " + ", ".join(bad[:10]))
+        return redirect("wagtailsnippets_prblm_mailer_subscriber:list")
+
+    return render(request, "prblm_mailer/import_subscribers.html", {"newsletter": newsletter})

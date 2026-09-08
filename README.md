@@ -13,11 +13,17 @@ Works on **Wagtail 6 and 7** (Django 5.0–5.2).
 - **Subscribers with double opt-in** — people confirm before they ever receive anything.
 - **Groups / segments** — optional; target a newsletter at subscribers who answered a signup
   field a certain way.
+- **Conditional signup** — a contact form can offer the newsletter with an opt-in checkbox, and
+  only subscribe the people who tick it.
 - **Four delivery modes, one switch** — log-only, print-to-terminal, a local inbox, or real
   Mailgun.
 - **Open + click tracking** — engagement stats per newsletter, from Mailgun’s own tracking.
-- **List hygiene** — hard bounces and complaints auto-unsubscribe.
-- **CSV import/export** and two **diagnostic commands** for the Mailgun setup.
+- **List hygiene** — hard bounces and complaints auto-unsubscribe; unsubscribing is final.
+- **Styled by default** — the confirmation email and every public page (confirm, unsubscribe,
+  activated) ship branded, and every one of them is a template you can override.
+- **CSV import/export** — from the Subscribers admin or the command line — plus two
+  **diagnostic commands** for the Mailgun setup.
+- **Startup checks** that name the five setup mistakes that otherwise fail silently.
 
 Nothing here imports your project’s code; the package stands alone.
 
@@ -27,13 +33,13 @@ Nothing here imports your project’s code; the package stands alone.
 
 ```bash
 # in your Wagtail site's virtualenv — latest release
-pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.1.0b1"
+pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.2.0b1"
 ```
 
 Or from the release's wheel, which needs neither git nor a build step:
 
 ```bash
-pip install https://github.com/prblmcodes/prblm-mailer/releases/download/v0.1.0b1/prblm_mailer-0.1.0b1-py3-none-any.whl
+pip install https://github.com/prblmcodes/prblm-mailer/releases/download/v0.2.0b1/prblm_mailer-0.2.0b1-py3-none-any.whl
 ```
 
 Pin the tag, not `main` — tags are immutable, so a rebuild resolves to identical code.
@@ -131,12 +137,22 @@ paths:
 
 ```python
 from django.urls import include, path
+from wagtail import urls as wagtail_urls
 
 urlpatterns = [
     # ...
     path("", include("prblm_mailer.urls_bundle")),
+    path("", include(wagtail_urls)),        # Wagtail's catch-all stays LAST
 ]
 ```
+
+> **Order matters — put the bundle ABOVE `include(wagtail_urls)`.** Wagtail's page-serving
+> pattern (`^((?:[\w\-]+/)*)$`) matches any path made of plain word segments, so mounted
+> below it every newsletter URL is swallowed and 404s. The failure is a confusing one: the
+> activation link in the email *works* (it contains an email address, whose `@` and `.` the
+> catch-all doesn't match), and then the "subscription activated" page it redirects to 404s.
+> A startup check (`prblm_mailer.W004`) detects this by resolving the real URL, and names the
+> app that's shadowing it.
 
 That gives you:
 - `/mailer/…` — one-click unsubscribe (this package)
@@ -147,8 +163,16 @@ If you need different prefixes, include the three yourself instead
 (`prblm_mailer.urls`, `newsletter.urls`, `anymail.urls`).
 
 > **Startup checks:** prblm-mailer registers Django system checks, so `manage.py check` (and
-> server start) will tell you clearly if `SITE_ID` is missing (error) or
-> `WAGTAILADMIN_BASE_URL` is unset (warning) — no more silent 404s or blank images.
+> server start) tells you clearly what's wrong instead of leaving a silent 404 or a blank
+> image:
+>
+> | | Meaning |
+> |---|---|
+> | `E001` | `SITE_ID` is missing — confirm/unsubscribe views will 404. |
+> | `W001` | `WAGTAILADMIN_BASE_URL` is unset — email links/images fall back to the Wagtail Site. |
+> | `W002` | The Site domain is still `example.com` — confirmation links point nowhere. |
+> | `W003` | `NEWSLETTER_USE_HTTPS` is on for an `http` base URL — the link won't open. |
+> | `W004` | Something else answers the newsletter URLs (usually Wagtail's catch-all, mounted too early). |
 
 ## 4. Migrate and create the list
 
@@ -165,6 +189,37 @@ Newsletter.objects.get_or_create(
 
 Log into `/admin/` — you’ll see **Newsletters** and **Subscribers** in the menu.
 
+### What “the list” is (and how it differs from groups)
+
+That `Newsletter` row **is** the mailing list — a django-newsletter object holding the list's
+title, sender identity and its subscribers. `PRBLM_MAILER["NEWSLETTER_SLUG"]` names which one
+this package uses, which is why the slug you create has to match (`"main"` by default). It is
+not a group, and not a category; it is the thing people subscribe *to*.
+
+django-newsletter can hold **several** lists, and each subscriber belongs to one specific
+list. This package sends to **one** list — the one named by `NEWSLETTER_SLUG`. Point that
+setting at another slug and everything follows it, but there is no per-broadcast list picker.
+
+**Groups are the layer inside a list.** Everyone lives on the one list; a group tags them with
+an answer they gave at signup (*Instrument: Guitar*), so a newsletter can target a slice of it
+(§7). So:
+
+| | What it is | How many | How someone joins |
+|---|---|---|---|
+| **List** (`Newsletter`) | The mailing list itself | One in use, set by `NEWSLETTER_SLUG` | Signs up + confirms |
+| **Group** (`SubscriberTag`) | A tag on a subscriber | As many as your form fields make | Answers a grouping field |
+
+That's the deliberate split: separate lists would mean separate confirmations, separate
+unsubscribes and people signing up twice. One list plus groups gives you targeting without
+any of that.
+
+### The Subscribers listing is read-only
+
+You can read it, search it, export it, import into it, and delete from it — but not hand-edit
+a row. Subscription state is opt-in/confirm/unsubscribe bookkeeping, and typing over it is how
+you end up mailing someone who never confirmed. People join via a signup form's double opt-in,
+and leave via unsubscribe or a hard bounce, so there is no Edit button on a subscriber.
+
 ---
 
 ## 5. Sending & testing — the four delivery modes
@@ -176,10 +231,14 @@ Switch by changing one setting, `PRBLM_MAILER["DELIVERY"]`:
 | `dry_run` | Logs recipient count + size. Sends nothing. | — |
 | `console` | Prints the full rendered email to the terminal, one per recipient. | — |
 | `local` | Sends to a local inbox (mailcrab/mailpit) — looks like a real client. | a local inbox |
-| `mailgun` | Real send via Anymail’s Mailgun backend. | Mailgun (see §10) |
+| `mailgun` | Real send via Anymail’s Mailgun backend. | Mailgun (see §11) |
 
 `console` and `local` fill in the per-recipient merge fields themselves (Mailgun isn’t
 involved), so the email you see is complete.
+
+Only `mailgun` produces **open/click tracking**, for the same reason: Mailgun is what rewrites
+links and injects the open pixel. Links in a `console`/`local` email are your plain URLs, so
+clicking them records nothing (§8).
 
 **What `DELIVERY` covers:** newsletter **broadcasts**, **test sends**, *and* the **double
 opt-in confirmation email** — so with `DELIVERY="local"` the confirmation lands in mailcrab
@@ -198,7 +257,12 @@ activation link are django-newsletter’s**, not the plugin’s (the plugin only
 sent, via `DELIVERY`). So:
 
 - **Link domain** comes from the `django.contrib.sites` **Site** record (not
-  `WAGTAILADMIN_BASE_URL`). Default is `example.com`, so set it:
+  `WAGTAILADMIN_BASE_URL`), and Django seeds that record as `example.com` — which is why an
+  otherwise-correct setup mails out dead `https://example.com/...` confirmations.
+  **The plugin repairs this for you:** while the domain is still the untouched `example.com`
+  placeholder, the next signup copies the host from `WAGTAILADMIN_BASE_URL` into it, and a
+  startup check (`prblm_mailer.W002`) warns until that happens. A domain you have set
+  yourself is never overwritten. To do it by hand:
   ```python
   # Django admin → Sites, or a shell:
   Site.objects.filter(id=1).update(domain="localhost:8000")   # your real domain in production
@@ -208,9 +272,24 @@ sent, via `DELIVERY`). So:
   ```python
   NEWSLETTER_USE_HTTPS = not DEBUG      # http locally, https in production
   ```
-- **It’s plain (unstyled)** — that’s django-newsletter’s default template, by design. To style
-  it, override the template in your project:
-  `templates/newsletter/message/subscribe.html` (and `.txt`).
+  A startup check (`prblm_mailer.W003`) flags the mismatch, since the symptom — a link that
+  simply refuses to open — says nothing about its cause.
+- **It arrives styled.** django-newsletter's own confirmation template is bare HTML; the
+  plugin renders its own in place of it — a centred card using your `BRAND_COLOR`, the same
+  Montserrat/Helvetica stack as the MJML blocks, a real button, a paste-able fallback link,
+  and a preheader. It ships at
+  `prblm_mailer/templates/prblm_mailer/optin/subscribe.html`.
+
+  **To restyle it**, copy that file into your project as
+  `templates/newsletter/message/subscribe.html` and edit freely — a host template of that
+  name wins over both the plugin's and django-newsletter's, and the plugin steps aside as
+  soon as it sees one. Keep the activation link intact:
+  ```django
+  <a href="{{ site_url }}{{ subscription.subscribe_activate_url }}">Confirm</a>
+  ```
+  Context available: `newsletter`, `subscription`, `site`, `site_url`, plus `brand_color` and
+  `from_name` from your `PRBLM_MAILER` settings. The plain-text half
+  (`subscribe.txt`) stays django-newsletter's unless you override that too.
 
 **Running a local inbox** (for `DELIVERY="local"`):
 
@@ -338,6 +417,22 @@ Then `python manage.py makemigrations && python manage.py migrate`.
 **“Use for grouping”** on a **choice field** (e.g. a “Which instrument?” dropdown). Every
 submission then tags the subscriber automatically (e.g. *Instrument: Guitar*). No code.
 
+**Letting people opt out (a contact form that also offers the newsletter):** add a
+**checkbox** field — “Keep me posted”, say — and tick **“Use as the newsletter opt-in”** on
+it. From then on that page only subscribes submitters who ticked the box; everyone else just
+sends the form. Their submission is still stored and still emails you as normal — only the
+list is skipped, and no confirmation email goes out.
+
+- **Ticked = subscribe.** For an opt-*out* form (box starts ticked, unticking declines), set
+  the field's **default value** to checked in the page editor.
+- It must be a **checkbox** — the one field type with an unambiguous "no". Anything else is
+  rejected in the editor, and ignored at submission if flagged some other way.
+- A field marked as the opt-in but **missing from the submission counts as declined**;
+  silence is not consent.
+- **Only the first** marked field is used — two consent checkboxes is a mistake, not a rule.
+- A page with **no** opt-in field is unchanged: every submission is offered the list, exactly
+  as before.
+
 ---
 
 ### 6c. A Wagtail form-builder page — the manual way (no plugin base classes)
@@ -386,6 +481,9 @@ class FormPage(AbstractEmailForm):
         return submission                                       # return this — don't create a second one
 ```
 
+A host field model can carry `use_for_optin` (on a `checkbox` field) the same way, and the
+opt-in check honours it — the plugin duck-types this attribute too.
+
 The two field attributes (`use_for_grouping` + `resolved_group_name`) are exactly what the
 plugin looks for by duck-typing, so grouping works identically to 6b.
 
@@ -418,6 +516,13 @@ at submission time as a safety net.
 
 ## 8. Open & click tracking
 
+> **Tracking works under `DELIVERY="mailgun"` only.** Clicks and opens are counted by
+> Mailgun, which rewrites every link and adds the open pixel as it sends, then reports back
+> over the webhook. Under `dry_run`, `console` or `local` (mailcrab/mailpit) no Mailgun is
+> involved, so nothing rewrites the links and no webhook ever fires — clicking a link in a
+> mailcrab message records **nothing**, and the Engagement panel stays empty. That's expected,
+> not a fault. To exercise the tracking path locally, use `simulate_mailgun_click` below.
+
 Engagement comes from **Mailgun’s own tracking**, delivered to the Anymail webhook — the
 package runs no redirect or pixel endpoint of its own. To turn it on:
 
@@ -441,7 +546,82 @@ python manage.py simulate_mailgun_click  # posts a realistic signed click to you
 is fully local — it exercises the real signature check, payload parser, and signal handler;
 pass `--event-id X` twice to prove retries are de-duplicated.
 
-## 9. CSV import / export
+## 9. The public pages (confirm, unsubscribe, activated)
+
+django-newsletter serves the pages people land on from your emails:
+
+| Path | When they see it |
+|---|---|
+| `/newsletter/<slug>/subscription/<email>/subscribe/activate/<code>/` | The link in the confirmation email |
+| `/newsletter/<slug>/subscribe/activation-completed/` | After they confirm |
+| `/newsletter/<slug>/unsubscribe/` | Unsubscribe form |
+| `/newsletter/<slug>/unsubscribe/activation-completed/` | After they unsubscribe |
+| `/newsletter/<slug>/subscribe/email-sent/` | "Check your inbox" |
+| `/mailer/deny/` | After declining a signup from the confirm page |
+| `/mailer/unsubscribe/<token>/` | The one-click List-Unsubscribe link mail clients show |
+
+**They arrive styled, and they say something useful.** django-newsletter's own versions are
+unstyled and thin, so the plugin ships replacements: a centred card with your `FROM_NAME` in
+the header bar, `BRAND_COLOR` on the buttons, and copy written for the person reading it. The
+CSS is inline and self-contained, because these pages get opened mid-flow from an email client
+and can't depend on your asset pipeline — and no webfonts are fetched on the visitor's behalf
+(add your own via the `header` block).
+
+Three behaviours worth knowing, all of which the stock templates get wrong:
+
+- **The activation code is hidden.** The default template renders the whole form, so a long
+  random code the visitor can't use and mustn't edit sits in a text box. The plugin posts it
+  as a hidden field — same round-trip, off the screen.
+- **A re-used link says so.** Follow an already-confirmed link and you get *"Already
+  confirmed — nothing more to do"* rather than a form that looks like it failed. Same for an
+  already-unsubscribed link.
+- **"Deny subscription".** If someone was signed up who didn't want to be (a typo, or a
+  stranger using their address), the confirm page offers a decline button that deletes the
+  pending signup and kills the link. It can never remove a confirmed subscriber — only a
+  still-unconfirmed one. *Cancel* leaves the link usable later.
+
+**To restyle**, pick the level you need.
+
+*Wrap them in your real site layout* — create `templates/newsletter/common.html` in your
+project (it wins over the plugin's) and hand the page body to your own base:
+
+```django
+{% extends "base.html" %}
+{% block content %}{% block body %}{% endblock %}{% endblock %}
+```
+
+*Keep the layout, change the look* — copy the plugin's shell out of the package and edit the
+CSS in it (a template can't extend another of the same name, so copy rather than extend):
+
+```bash
+python -c "import prblm_mailer,pathlib;print(pathlib.Path(prblm_mailer.__file__).parent/'templates/newsletter/common.html')"
+# copy that file to  templates/newsletter/common.html  in your project
+```
+
+*Change one page only* — override just that template, e.g.
+`templates/newsletter/subscription_subscribe_activated.html`. The full list of page names is
+in `newsletter/templates/newsletter/` inside django-newsletter.
+
+Two useful tags are available in any of these: `{% load prblm_mailer_tags %}` then
+`{% mailer_setting "BRAND_COLOR" %}` or `{% mailer_setting "FROM_NAME" %}`.
+
+---
+
+## 10. CSV import / export
+
+**In the admin:** *Subscribers* → **Import CSV** / **Export CSV** in the header. Export
+downloads the whole list; import takes a file with an `email` column and asks one question —
+whether you already hold these people's consent.
+
+- **Unticked (the default)** — everyone arrives **pending**: on the list, never emailed until
+  they confirm for themselves.
+- **Ticked** — they arrive confirmed, and will receive your next newsletter. Only for a list
+  whose consent you actually hold.
+
+Either way **no confirmation emails are sent by an import**. Mailing a freshly imported list
+in one go is the fastest way to get a sending domain blocked.
+
+**On the command line**, same rules:
 
 ```bash
 python manage.py export_subscribers --output list.csv
@@ -451,11 +631,12 @@ python manage.py import_subscribers list.csv --confirmed   # only for a list you
 
 CSV columns: `email` (required), `name`, `groups` (`"Group: Value; Group2: Value2"`). Import
 skips invalid/blank emails, applies groups, never sends opt-in emails, and never downgrades an
-already-confirmed subscriber. The two commands round-trip.
+already-confirmed subscriber. Admin and command line share one implementation
+(`prblm_mailer/csv_io.py`), so an export round-trips through either.
 
 ---
 
-## 10. Going live with Mailgun
+## 11. Going live with Mailgun
 
 ```python
 import os
@@ -473,6 +654,23 @@ Set `PRBLM_MAILER["DELIVERY"] = "mailgun"`, send yourself a real test, then send
 Send page → Who gets it → Proceed → confirm count → Send now. Keep secrets in the
 environment, never in code. Run `python manage.py mailgun_doctor` if anything misbehaves.
 
+## Upgrading
+
+**To 0.2.0b1 from 0.1.0b1:** this release adds `use_for_optin` to `AbstractGroupingFormField`,
+so hosts that use the abstract form bases must generate a migration for their own app:
+
+```bash
+pip install --upgrade "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.2.0b1"
+python manage.py makemigrations <your app>     # picks up the new field
+python manage.py migrate
+python manage.py check                         # confirms the setup checks pass
+```
+
+Nothing else is required, and no existing behaviour changes: a form with no opt-in checkbox
+subscribes every submission exactly as before. If you had overridden
+`newsletter/message/subscribe.html` or `newsletter/common.html`, your versions still win —
+the package only fills in where you haven't.
+
 ## Limitations
 
 - **Sending is synchronous** — one Mailgun batch call per 1000 recipients, within the request.
@@ -486,6 +684,9 @@ cd prblm-mailer
 DJANGO_SETTINGS_MODULE=tests.settings python -m django test tests
 # or, with pytest installed:  pip install -e ".[test]" && pytest
 ```
+
+114 tests, run against **both** Wagtail 6 and 7 — the two differ in admin internals often
+enough that a green run on one proves little about the other.
 
 The suite runs on both Wagtail 6 and 7.
 

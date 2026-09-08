@@ -35,7 +35,7 @@ from django.db import models
 from wagtail.admin.panels import FieldPanel
 from wagtail.contrib.forms.models import AbstractFormField
 
-from .segments import CHOICE_FIELD_TYPES
+from .segments import CHOICE_FIELD_TYPES, OPTIN_FIELD_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -59,10 +59,19 @@ class AbstractGroupingFormField(AbstractFormField):
         help_text="Name of the group (defaults to the field's label).",
     )
 
+    use_for_optin = models.BooleanField(
+        default=False,
+        verbose_name="Use as the newsletter opt-in",
+        help_text="Make this checkbox decide whether the submitter joins the newsletter. "
+                  "Ticked = subscribe. Without such a field, every submission is offered "
+                  "the list.",
+    )
+
     # AbstractFormField defines its own `panels`; extend so the new fields are editable.
     panels = AbstractFormField.panels + [
         FieldPanel("use_for_grouping"),
         FieldPanel("group_name"),
+        FieldPanel("use_for_optin"),
     ]
 
     @property
@@ -78,6 +87,17 @@ class AbstractGroupingFormField(AbstractFormField):
                 "use_for_grouping": (
                     "Grouping only works on choice fields "
                     "(dropdown, radio, checkboxes, multiselect). "
+                    f"“{self.label or 'this field'}” is a {self.field_type} field."
+                )
+            })
+
+        # Consent has to be a yes/no the visitor can leave unticked. On any other
+        # field type there is no answer that reliably means "no", so a submission
+        # could subscribe someone who declined.
+        if self.use_for_optin and self.field_type != OPTIN_FIELD_TYPE:
+            raise ValidationError({
+                "use_for_optin": (
+                    "The newsletter opt-in must be a checkbox field. "
                     f"“{self.label or 'this field'}” is a {self.field_type} field."
                 )
             })
