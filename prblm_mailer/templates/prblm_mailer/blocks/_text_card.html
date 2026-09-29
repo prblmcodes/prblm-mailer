@@ -1,0 +1,8 @@
+{% load wagtailcore_tags %}{% comment %}
+  One card. `card` carries the colours resolved in TwoColumnTextBlock.get_context;
+  `value.align` is the block-level alignment, shared by both cards.
+
+  The button is an <a> in an mj-text, not an mj-button: mj-button can't take the
+  custom text colour, and a raw button would be foster-parented out of the table
+  (see email_content.html).
+{% endcomment %}<mj-column width="{{ card_pct }}%" {% if card.bg %}background-color="{{ card.bg }}" border-radius="{{ value.corners }}px" {% endif %}padding="24px 20px" vertical-align="{{ value.valign|default:"top" }}">{% if card.value.heading %}<mj-text align="{{ value.align }}" font-family="Montserrat, Helvetica, Arial, sans-serif" font-size="20px" font-weight="700" line-height="1.25" color="{{ card.text_hex }}" padding="0 0 10px">{{ card.value.heading }}</mj-text>{% endif %}{% if card.value.description %}<mj-text css-class="body-content" align="{{ value.align }}" font-size="15px" line-height="1.6" color="{{ card.muted_hex }}" padding="0 0 14px">{{ card.value.description|richtext }}</mj-text>{% endif %}{% if card.value.button_text %}<mj-text align="{{ value.align }}" padding="4px 0 0"><a href="{{ card.value.button_url }}" style="display:inline-block;background:{{ card.button_bg }};color:{{ card.button_text_hex }};padding:11px 26px;border-radius:6px;font-family:Montserrat,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;text-decoration:none">{{ card.value.button_text }}</a></mj-text>{% endif %}</mj-column>

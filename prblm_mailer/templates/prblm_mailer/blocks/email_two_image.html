@@ -1,0 +1,11 @@
+{% load wagtailimages_tags %}{% comment %}
+  Two images side by side. mj-image inside mj-column handles the responsive width
+  and the mobile stack; the gap is an empty spacer column, with its width taken out
+  of the two image columns so the row still totals 100%.
+
+  Each caption lives in its own column under its own image, so a long caption on one
+  side can't push the other image out of line.
+
+  Rendition width 1000 covers the widest column (a 66% column of a 680px body is
+  ~450px) at 2x for retina, without shipping a needlessly heavy file.
+{% endcomment %}{% image value.image_left width-1000 as img_l %}{% image value.image_right width-1000 as img_r %}<mj-section background-color="{{ bg }}" css-class="mcenter" padding="16px 24px"><mj-column width="{{ left_pct }}%" padding="0" vertical-align="top"><mj-image src="{{ img_l.full_url }}" alt="{{ img_l.alt }}" padding="0"{% if value.link_left %} href="{{ value.link_left }}"{% endif %} />{% if value.caption_left %}<mj-text align="center" font-size="13px" line-height="1.5" color="{{ muted_hex }}" padding="8px 4px 0">{{ value.caption_left }}</mj-text>{% endif %}</mj-column>{% if gap_pct %}<mj-column width="{{ gap_pct }}%"></mj-column>{% endif %}<mj-column width="{{ right_pct }}%" padding="0" vertical-align="top"><mj-image src="{{ img_r.full_url }}" alt="{{ img_r.alt }}" padding="0"{% if value.link_right %} href="{{ value.link_right }}"{% endif %} />{% if value.caption_right %}<mj-text align="center" font-size="13px" line-height="1.5" color="{{ muted_hex }}" padding="8px 4px 0">{{ value.caption_right }}</mj-text>{% endif %}</mj-column></mj-section>

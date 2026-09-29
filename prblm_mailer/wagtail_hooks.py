@@ -198,14 +198,41 @@ def email_block_field_layout():
     fill their cell. Self-contained so the package needs no host CSS."""
     from django.utils.safestring import mark_safe
 
-    glist = ".hdr-fields,.ftr-fields,.content-fields,.twocol-fields,.img-fields,.spacer-fields".split(",")
+    # Nested StructBlocks need their own entry: the rule below reaches direct
+    # children only, so a card's or a profile's fields are invisible to the parent's
+    # grid and would stack full-width.
+    glist = (".hdr-fields,.ftr-fields,.content-fields,.twocol-fields,.img-fields,.spacer-fields,"
+             ".social-fields,.twocoltext-fields,.twoimg-fields,.card-fields,"
+             ".social-link-fields").split(",")
     cells = ",".join(f"{g}>[data-contentpath]" for g in glist)
+
+    def scoped(selector):
+        """`selector` inside each of our blocks, and nowhere else."""
+        return ",".join(f"{g} {selector}" for g in glist)
+
     css = (
         f"{','.join(glist)}{{display:grid;grid-template-columns:repeat(6,1fr);gap:0 1rem}}"
         f"{cells}{{grid-column:span 3;min-width:0}}"
         ".content-fields>[data-contentpath='heading'],"
         ".content-fields>[data-contentpath='description'],"
-        ".twocol-fields>[data-contentpath='description']{grid-column:1/-1}"
+        ".twocol-fields>[data-contentpath='description'],"
+        # The profile list and each text card manage their own inner layout, so
+        # give them the full row rather than squeezing them into half of it.
+        ".social-fields>[data-contentpath='links'],"
+        ".twocoltext-fields>[data-contentpath='left'],"
+        ".twocoltext-fields>[data-contentpath='right'],"
+        ".card-fields>[data-contentpath='heading'],"
+        ".card-fields>[data-contentpath='description']{grid-column:1/-1}"
+        # A profile is three short fields; three to a row beats two and a widow.
+        ".social-link-fields>[data-contentpath]{grid-column:span 2}"
+        # A chooser shows the chosen file's name, and a long one used to run out of
+        # its cell and across the next field. Ellipsis it instead: the grid cell has
+        # min-width:0 above, but the flex row inside the chooser needs its own.
+        # Scoped to these blocks — the package has no business restyling the choosers
+        # on the host's own pages.
+        f"{scoped('.chooser')},{scoped('.chooser .chosen')}{{min-width:0}}"
+        f"{scoped('.chooser__title')}"
+        "{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}"
         # Make select + chooser fields fill their grid cell (Wagtail shrinks them).
         ".w-field--select{display:block}"
         ".w-field--select select{width:100%;box-sizing:border-box}"

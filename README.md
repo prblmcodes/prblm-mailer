@@ -8,8 +8,9 @@ Works on **Wagtail 6 and 7** (Django 5.0–5.2).
 
 ## What you get
 
-- **Compose in the admin** — newsletters (“Broadcasts”) built from MJML blocks, with a live
-  email preview and a “send a test” button.
+- **Compose in the admin** — newsletters (“Broadcasts”) built from MJML blocks (content,
+  images, two-column layouts, social icons, spacers), with a live email preview and a
+  “send a test” button.
 - **Subscribers with double opt-in** — people confirm before they ever receive anything.
 - **Groups / segments** — optional; target a newsletter at subscribers who answered a signup
   field a certain way.
@@ -305,6 +306,43 @@ silent error. Point it elsewhere with `LOCAL_SMTP_HOST` / `LOCAL_SMTP_PORT`.
 **In the admin:** Newsletters → Add → compose → **Save & send** → the Send page has a live
 preview, a **Send a test**, and **Who gets it** (audience). “Send a test” goes to one address
 you type and needs no subscribers.
+
+### The block set — what a newsletter is built from
+
+| Block | What it's for |
+|---|---|
+| **Header** | A logo and/or a line of text at the top; either can link. |
+| **Content section** | Heading, rich-text description and an optional button. |
+| **Two columns (image + text)** | An image filling one column, copy and a button in the other. |
+| **Two columns (text + text)** | Two text cards side by side, each with its own background, button and vertical alignment. |
+| **Image** | One image, with a width and alignment. |
+| **Two images** | Two images side by side, adjustable split and optional captions. |
+| **Social links** | Profile icons in a row or stacked, with optional handles. |
+| **Spacer / divider** | Vertical space, optionally with a rule through it. |
+| **Footer (with unsubscribe)** | The unsubscribe button, plus optional logo and text. |
+
+Every section block takes **one or two background colours** (two = a gradient) and a light/dark
+text colour. Outlook desktop can't render CSS gradients, so a two-colour section falls back to
+the first colour there; single colours work everywhere.
+
+**Social links.** Pick a platform, paste the profile URL, and optionally add a handle to show
+beside the icon (`@yourname`). The Email and Website entries take `mailto:` and `tel:` links
+as well as `https://`.
+
+- **Colour comes from the chip** — the circle or rounded square behind the glyph. Leave
+  *Icon colour* blank and each platform wears its own brand colour; set it and every icon
+  matches. The glyph flips between white and dark automatically for contrast.
+- **Plain icons (no chip) are white or dark only.** The icons are PNGs, because Gmail strips
+  SVG, and a PNG's colour is baked in — so without a chip to colour there is nothing to tint.
+  Which of the two you get follows the section's *Text colour*.
+- **The icons are static files**, and email needs an absolute URL to reach them. They work as
+  soon as `WAGTAILADMIN_BASE_URL` points at a host that serves `/static/` publicly — so run
+  `collectstatic` before the first real send. On `localhost` they'll render in mailcrab but
+  not in a mail client on another machine.
+
+**Two images.** The split choices each total 100% and the gap is taken *out* of the two
+columns, so a row can never overflow the body width. Captions sit under their own image, so a
+long one on one side can't shunt the other image out of line.
 
 ---
 

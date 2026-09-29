@@ -3,6 +3,8 @@
 Not a real project — just enough for the app to import, migrate, and run tests
 against, with no reference to beMore.
 """
+import tempfile
+
 
 SECRET_KEY = "test-only-not-secret"
 DEBUG = True
@@ -84,3 +86,8 @@ PRBLM_MAILER = {
 
 # Send to console in tests; nothing leaves.
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# Image tests write renditions through Wagtail's storage; without this they land in
+# the repo root as images/ and original_images/ and stay there after the run.
+MEDIA_ROOT = tempfile.mkdtemp(prefix="prblm-mailer-test-media-")
+MEDIA_URL = "/media/"

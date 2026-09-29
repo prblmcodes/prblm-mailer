@@ -51,6 +51,9 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
   (bounces/complaints), `EngagementEvent` (clicks+opens, one table, `kind` field).
 - `blocks.py` + `templates/prblm_mailer/blocks/*.html` — the MJML email blocks. Images use
   `{{ img.full_url }}` (absolute URLs, needed in email).
+- `social.py` — the Social links block's platform list (slug → label + brand colour). Data
+  only, no Django imports, because `scripts/build_icons.py` reads the same list; the script
+  refuses to run if its artwork and this list disagree about slugs.
 - `sending.py` — render (MJML→HTML via `mrml`), `DELIVERY` dispatch, `_send_local` (per-
   recipient, substitutes `%recipient.*%` in Python), `_send_mailgun` (Anymail batch),
   `send_test`, `send_broadcast`, `send_optin` (routes django-newsletter's confirmation email
@@ -175,12 +178,48 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
   on the index *and* inspect views: a permission-policy override worked on Wagtail 7 but not 6,
   which the cross-version run caught. `SubscriberEditView`'s redirect stays as the URL guard.
 
+## 0.3.0b1 changes (blocks)
+Three new body blocks, all registered in `email_body_blocks()`:
+- **Social links** (`SocialLinksBlock`) — a ListBlock of platform/url/handle, laid out in a row
+  or stacked. **Icons are PNGs**, shipped in `static/prblm_mailer/icons/` and generated offline
+  by `scripts/build_icons.py` (needs cairosvg; the package never does at runtime). Gmail strips
+  SVG, so PNG is the only portable option — and a PNG's colour is baked in, which is why the
+  editable colour is the **chip** behind the glyph, with `_contrast_text()` picking the white or
+  dark glyph. Plain (chipless) icons are therefore white-or-dark only, decided by the section's
+  text colour. `_icon_url()` makes the static path absolute via `sending.absolute_url` (local
+  import: sending → models → blocks would be circular) and returns "" rather than raising, so a
+  missing file costs an icon, not the send. Artwork: Simple Icons (CC0), except LinkedIn (they
+  had it removed) from Font Awesome, and hand-drawn email/website marks.
+- **Two columns (text + text)** (`TwoColumnTextBlock`) — two `_CardBlock`s, each with its own
+  background, text colour and button, because two cards sharing one background would just be
+  the Content block cut in half.
+- **Two images** (`TwoImageBlock`) — adjustable split + optional captions.
+
+Gotchas these three taught us:
+- **A nested StructBlock needs its own `form_classname`.** The admin grid in
+  `wagtail_hooks.py` targets `>[data-contentpath]`, which reaches direct children only, so a
+  card's or a profile's fields stacked full-width until `_CardBlock`/`SocialLinkBlock` got
+  `card-fields`/`social-link-fields` of their own. Anything that scopes CSS to these blocks
+  goes through `scoped()` there — a bare `.chooser__title` rule would restyle every chooser on
+  the host's own pages.
+- **mrml honours `background-color` and `border-radius` on `mj-column`** (verified), mapping
+  both onto the inner `<td>` — so cards and gaps need no raw tables. A gap is an empty spacer
+  `mj-column` whose width is taken *out* of the two content columns; a split pair that doesn't
+  total 100 (the original `66-33`) leaves a sliver of background down one edge.
+- **Arbitrary HTML in a block goes in `mj-text`, never `mj-raw`.** An `mj-raw` is emitted
+  between `</tr>` and `</tbody>` and gets foster-parented *above* the section, losing the
+  section background with it (the same trap `email_content.html` documents for buttons).
+  `tests/test_blocks.py::test_stays_inside_its_section` pins this.
+- **Wagtail 6 + ListBlock in a test fixture:** a raw Python list stays a plain list instead of
+  becoming a `ListValue`, and Wagtail 6's post-save indexer then dies on the missing
+  `bound_blocks`. Build such fixtures through `to_python`, which is what the database does.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
   JS — an editable install hides this because it reads the source tree. Verify after any
-  packaging change by building and counting: the wheel must contain every template + 1 JS
-  (22 templates at 0.2.0b1).
+  packaging change by building and counting: the wheel must contain every template, the
+  admin JS and the 30 social icon PNGs (27 templates + 31 static files at 0.3.0b1).
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.

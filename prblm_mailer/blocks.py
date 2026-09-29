@@ -17,6 +17,8 @@ from wagtail import blocks
 from wagtail.blocks import StructBlockValidationError
 from wagtail.images.blocks import ImageChooserBlock
 
+from . import social
+
 RICH_FEATURES = ["h2", "h3", "bold", "italic", "ol", "ul", "hr", "link"]
 
 ALIGN_CHOICES = [("left", "Left"), ("center", "Center"), ("right", "Right")]
@@ -314,13 +316,264 @@ class SpacerBlock(blocks.StructBlock):
         form_classname = "struct-block spacer-fields"
 
 
+# --------------------------------------------------------------- social links
+
+SOCIAL_LAYOUT_CHOICES = [("row", "One row"), ("column", "One per line")]
+SOCIAL_SHAPE_CHOICES = [
+    ("circle", "Circle"), ("rounded", "Rounded square"), ("plain", "Plain icon (no chip)"),
+]
+SOCIAL_SIZE_CHOICES = [("32", "Small"), ("40", "Medium"), ("48", "Large")]
+# A profile link isn't always http: Email and WhatsApp entries want mailto:/tel:,
+# which a URLBlock rejects outright — hence a CharBlock and this check.
+LINK_SCHEMES = ("http://", "https://", "mailto:", "tel:")
+
+
+def _icon_url(slug, variant):
+    """Absolute URL of one shipped icon PNG.
+
+    Absolute because a mail client has no site to resolve `/static/...` against.
+    Returns "" rather than raising if the file isn't collected: a missing icon
+    should cost you an icon, not the whole send.
+    """
+    from django.templatetags.static import static
+
+    try:
+        path = static(f"prblm_mailer/icons/{slug}-{variant}.png")
+    except Exception:  # noqa: BLE001
+        return ""
+    if path.startswith(("http://", "https://", "//")):
+        return path                      # already absolute (S3/CDN storage)
+    # Local import: sending imports models, which imports this module.
+    from .sending import absolute_url
+
+    return absolute_url(path)
+
+
+class SocialLinkBlock(blocks.StructBlock):
+    """One profile: which platform, where it goes, and an optional handle."""
+
+    platform = blocks.ChoiceBlock(choices=social.platform_choices, label="Platform")
+    url = blocks.CharBlock(label="Links to", help_text="https://… (or mailto:… / tel:…)")
+    username = blocks.CharBlock(
+        required=False, label="Handle",
+        help_text="Optional, shown next to the icon — e.g. @yourname",
+    )
+
+    def clean(self, value):
+        result = super().clean(value)
+        url = (value.get("url") or "").strip()
+        if url and not url.lower().startswith(LINK_SCHEMES):
+            raise StructBlockValidationError(block_errors={
+                "url": ValidationError("Start the link with https://, mailto: or tel:."),
+            })
+        return result
+
+    class Meta:
+        icon = "link"
+        label = "Social link"
+        form_classname = "struct-block social-link-fields"
+
+
+class SocialLinksBlock(_StyledSection):
+    """Social profiles as icons — in a row or stacked, with optional handles.
+
+    The icons are PNGs shipped with the package (email clients strip SVG), in white
+    and dark only. Colour comes from the *chip* behind the glyph, which is an inline
+    background every client renders, and the glyph flips to whichever of the two
+    contrasts with it. A plain icon has no chip, so there it really is white or dark
+    — decided by the section's text colour.
+    """
+
+    links = blocks.ListBlock(SocialLinkBlock(), label="Profiles", min_num=1)
+    layout = blocks.ChoiceBlock(choices=SOCIAL_LAYOUT_CHOICES, default="row", label="Layout")
+    align = blocks.ChoiceBlock(choices=ALIGN_CHOICES, default="center", label="Align")
+    shape = blocks.ChoiceBlock(choices=SOCIAL_SHAPE_CHOICES, default="circle", label="Icon shape")
+    icon_size = blocks.ChoiceBlock(choices=SOCIAL_SIZE_CHOICES, default="40", label="Icon size")
+    icon_color = ColorBlock(
+        label="Icon colour",
+        help_text="Blank = each platform's own brand colour. Ignored by plain icons.",
+    )
+    text_color = _tc()
+    color1 = _c1()
+    color2 = _c2()
+
+    def get_context(self, value, parent_context=None):
+        context = super().get_context(value, parent_context)
+        shape = value.get("shape") or "circle"
+        size = int(value.get("icon_size") or 40)
+        chosen = (value.get("icon_color") or "").strip()
+        plain = shape == "plain"
+
+        context["box_px"] = size
+        # A plain glyph carries the whole shape, so it needs the room a chip would
+        # otherwise take; inside a chip it has to leave a margin or it looks stuffed.
+        context["glyph_px"] = round(size * (0.72 if plain else 0.55))
+        context["radius"] = "50%" if shape == "circle" else (f"{round(size / 5)}px" if shape == "rounded" else "0")
+        context["plain"] = plain
+
+        items = []
+        for link in value.get("links") or []:
+            slug = link.get("platform") or ""
+            label, brand = social.PLATFORMS.get(slug, (slug.title(), _brand()))
+            chip = chosen or brand
+            if plain:
+                variant = "white" if value.get("text_color") == "light" else "dark"
+            else:
+                variant = "white" if _contrast_text(chip) == "#ffffff" else "dark"
+            items.append({
+                "url": (link.get("url") or "").strip(),
+                "username": (link.get("username") or "").strip(),
+                "label": label,
+                "chip": chip,
+                "icon": _icon_url(slug, variant),
+            })
+        context["items"] = items
+        return context
+
+    class Meta:
+        icon = "site"
+        label = "Social links"
+        template = "prblm_mailer/blocks/email_social.html"
+        form_classname = "struct-block social-fields"
+
+
+# ------------------------------------------------------ two columns of text
+
+GAP_CHOICES = [("0", "None"), ("3", "Small"), ("5", "Medium"), ("8", "Large")]
+
+
+class _CardBlock(blocks.StructBlock):
+    """One side of the text/text block: its own copy, colours and button.
+
+    Per-card colours are the point of this block — two cards on one shared
+    background would just be the Content block cut in half.
+    """
+
+    heading = blocks.CharBlock(required=False, label="Heading")
+    description = blocks.RichTextBlock(features=RICH_FEATURES, required=False, label="Description")
+    button_text = blocks.CharBlock(required=False, label="Button label")
+    button_url = blocks.URLBlock(required=False, label="Button links to")
+    color = ColorBlock(label="Card background")
+    text_color = blocks.ChoiceBlock(
+        choices=TEXT_COLOR_CHOICES, default="dark", label="Text colour",
+        help_text="Use Light on a dark card.",
+    )
+    button_color = ColorBlock(label="Button colour")
+    button_text_color = ColorBlock(label="Button text colour")
+
+    class Meta:
+        icon = "doc-full"
+        label = "Column"
+        form_classname = "struct-block card-fields"
+
+
+def _card_context(card):
+    """Resolve one card's editable colours into the values its template needs."""
+    light = card.get("text_color") == "light"
+    button_bg = (card.get("button_color") or "").strip() or _brand()
+    return {
+        "value": card,
+        "bg": (card.get("color") or "").strip(),
+        "text_hex": "#ffffff" if light else "#1f2124",
+        "muted_hex": "#f0f0f0" if light else "#414141",
+        "button_bg": button_bg,
+        "button_text_hex": (card.get("button_text_color") or "").strip() or _contrast_text(button_bg),
+    }
+
+
+class TwoColumnTextBlock(_StyledSection):
+    """Two text columns side by side, each with its own background and button —
+    the text/text counterpart to the image/text two-column block."""
+
+    gradient_dir = "to bottom right"
+
+    left = _CardBlock(label="Left column")
+    right = _CardBlock(label="Right column")
+    align = blocks.ChoiceBlock(choices=ALIGN_CHOICES, default="left", label="Align")
+    valign = blocks.ChoiceBlock(
+        choices=[("top", "Top"), ("middle", "Middle"), ("bottom", "Bottom")],
+        default="top", label="Vertical alignment",
+        help_text="How the shorter column sits against the taller one.",
+    )
+    gap = blocks.ChoiceBlock(choices=GAP_CHOICES, default="5", label="Gap between columns")
+    corners = blocks.ChoiceBlock(
+        choices=[("10", "Rounded"), ("0", "Square")], default="10", label="Card corners",
+    )
+    text_color = _tc()
+    color1 = _c1()
+    color2 = _c2()
+
+    def get_context(self, value, parent_context=None):
+        context = super().get_context(value, parent_context)
+        gap = int(value.get("gap") or 0)
+        context["gap_pct"] = gap
+        # The gap is a spacer column, so the cards give up its width between them.
+        context["card_pct"] = round((100 - gap) / 2, 2)
+        context["left"] = _card_context(value.get("left") or {})
+        context["right"] = _card_context(value.get("right") or {})
+        return context
+
+    class Meta:
+        icon = "list-ul"
+        label = "Two columns (text + text)"
+        template = "prblm_mailer/blocks/email_two_column_text.html"
+        form_classname = "struct-block twocoltext-fields"
+
+
+# ----------------------------------------------------------- two images
+
+# Each pair must total 100: the halves are percentages of the section, and a pair
+# summing to 99 leaves a sliver of background down one edge of the row.
+SPLIT_CHOICES = [
+    ("50-50", "Equal halves"), ("60-40", "Wider left"), ("40-60", "Wider right"),
+    ("67-33", "Much wider left"), ("33-67", "Much wider right"),
+]
+
+
+class TwoImageBlock(_StyledSection):
+    """Two images side by side, with an adjustable split and optional captions."""
+
+    image_left = ImageChooserBlock(label="Left image")
+    link_left = blocks.URLBlock(required=False, label="Left links to")
+    caption_left = blocks.CharBlock(required=False, label="Left caption")
+    image_right = ImageChooserBlock(label="Right image")
+    link_right = blocks.URLBlock(required=False, label="Right links to")
+    caption_right = blocks.CharBlock(required=False, label="Right caption")
+    split = blocks.ChoiceBlock(choices=SPLIT_CHOICES, default="50-50", label="Split")
+    gap = blocks.ChoiceBlock(choices=GAP_CHOICES, default="3", label="Gap between images")
+    text_color = _tc()
+    color1 = _c1()
+    color2 = _c2()
+
+    def get_context(self, value, parent_context=None):
+        context = super().get_context(value, parent_context)
+        gap = int(value.get("gap") or 0)
+        left, right = (value.get("split") or "50-50").split("-")
+        # Percentages are of the section, so the gap has to come out of the columns
+        # rather than be added on top — otherwise the row overflows the body width.
+        scale = (100 - gap) / 100
+        context["gap_pct"] = gap
+        context["left_pct"] = round(int(left) * scale, 2)
+        context["right_pct"] = round(int(right) * scale, 2)
+        return context
+
+    class Meta:
+        icon = "image"
+        label = "Two images"
+        template = "prblm_mailer/blocks/email_two_image.html"
+        form_classname = "struct-block twoimg-fields"
+
+
 def email_body_blocks():
     """The block set offered in a newsletter's body — email blocks only."""
     return [
         ("header", HeaderBlock()),
         ("content", ContentBlock()),
         ("two_column", TwoColumnBlock()),
+        ("two_column_text", TwoColumnTextBlock()),
         ("image", ImageBlock()),
+        ("two_image", TwoImageBlock()),
+        ("social", SocialLinksBlock()),
         ("spacer", SpacerBlock()),
         ("footer", FooterBlock()),
     ]

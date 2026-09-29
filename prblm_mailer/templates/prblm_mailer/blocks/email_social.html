@@ -1,0 +1,11 @@
+{% comment %}
+  Social icons. Everything sits inside ONE mj-text: an mj-raw here would be emitted
+  between </tr> and </tbody>, which every HTML parser foster-parents out of the
+  table — moving the icons above the section and dropping its background (the same
+  trap documented in email_content.html). mj-text gives us a real <td> to draw in.
+
+  The chip is a one-cell table rather than a styled <a>, because Outlook ignores
+  padding and background on an inline element but honours both on a <td>. Fixed
+  width/height + align/valign keep the glyph centred where border-radius is
+  ignored (Outlook renders a square chip — acceptable, like the gradients).
+{% endcomment %}<mj-section background-color="{{ bg }}" css-class="mcenter" padding="24px 24px"><mj-column><mj-text align="{{ value.align }}" padding="0" color="{{ text_hex }}">{% if value.layout == 'row' %}<table role="presentation" align="{{ value.align }}" border="0" cellpadding="0" cellspacing="0" style="display:inline-table;border-collapse:collapse"><tr>{% for item in items %}<td align="center" valign="top" style="padding:0 6px;text-align:center"><a href="{{ item.url }}" style="text-decoration:none;color:{{ text_hex }}">{% include "prblm_mailer/blocks/_social_chip.html" %}{% if item.username %}<div style="font-family:Roboto,Helvetica,Arial,sans-serif;font-size:13px;line-height:1.4;color:{{ text_hex }};padding-top:6px;white-space:nowrap">{{ item.username }}</div>{% endif %}</a></td>{% endfor %}</tr></table>{% else %}{% for item in items %}<table role="presentation" align="{{ value.align }}" border="0" cellpadding="0" cellspacing="0" style="display:inline-table;border-collapse:collapse;margin-bottom:10px"><tr><td valign="middle"><a href="{{ item.url }}" style="text-decoration:none">{% include "prblm_mailer/blocks/_social_chip.html" %}</a></td>{% if item.username %}<td valign="middle" style="padding-left:12px;text-align:left"><a href="{{ item.url }}" style="font-family:Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.4;color:{{ text_hex }};text-decoration:none">{{ item.username }}</a></td>{% endif %}</tr></table>{% if not forloop.last %}<div style="font-size:0;line-height:0">&nbsp;</div>{% endif %}{% endfor %}{% endif %}</mj-text></mj-column></mj-section>

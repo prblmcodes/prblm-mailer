@@ -1,0 +1,7 @@
+{% load wagtailcore_tags %}{% comment %}
+  Two text cards side by side. Native mj-columns rather than a raw table: MJML
+  already stacks them on mobile, and mrml maps a column's background-color and
+  border-radius onto the inner <td> (verified), which is exactly where an email
+  client wants them. The gap is an empty spacer column — the cards give up its
+  width between them, so the row still totals 100% and never overflows.
+{% endcomment %}<mj-section background-color="{{ bg }}" css-class="mcenter" padding="24px 24px">{% with card=left %}{% include "prblm_mailer/blocks/_text_card.html" %}{% endwith %}{% if gap_pct %}<mj-column width="{{ gap_pct }}%"></mj-column>{% endif %}{% with card=right %}{% include "prblm_mailer/blocks/_text_card.html" %}{% endwith %}</mj-section>
