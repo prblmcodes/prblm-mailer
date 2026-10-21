@@ -22,8 +22,9 @@ Works on **Wagtail 6 and 7** (Django 5.0–5.2).
 - **List hygiene** — hard bounces and complaints auto-unsubscribe; unsubscribing is final.
 - **Styled by default** — the confirmation email and every public page (confirm, unsubscribe,
   activated) ship branded, and every one of them is a template you can override.
-- **CSV import/export** — from the Subscribers admin or the command line — plus two
-  **diagnostic commands** for the Mailgun setup.
+- **CSV import/export** — import a list from anywhere (the columns are detected and shown
+  to you before anything is written), from the Subscribers admin or the command line — plus
+  two **diagnostic commands** for the Mailgun setup.
 - **Startup checks** that name the five setup mistakes that otherwise fail silently.
 
 Nothing here imports your project’s code; the package stands alone.
@@ -647,9 +648,25 @@ Two useful tags are available in any of these: `{% load prblm_mailer_tags %}` th
 
 ## 10. CSV import / export
 
-**In the admin:** *Subscribers* → **Import CSV** / **Export CSV** in the header. Export
-downloads the whole list; import takes a file with an `email` column and asks one question —
-whether you already hold these people's consent.
+**In the admin:** *Subscribers* → **Import CSV** / **Export CSV** in the header.
+
+**Import takes a CSV from anywhere** — Mailchimp, MailPoet, Brevo, a CRM, a spreadsheet. The
+columns don't have to be named anything in particular, and the import happens in two steps so
+a wrong guess can't cost you anything:
+
+1. **Upload.** The columns are found by header name first (`email`, `e-mail`,
+   `Email Address`, `Subscriber`, …) and, failing that, by looking at which column actually
+   contains email addresses.
+2. **Check and confirm.** You see which column it read as the email address, a few real rows
+   from your file, and exactly what the import would do — *"680 new, 0 already on the list, 3
+   skipped (2 invalid, 1 repeated in the file)"*. Correct any column from a dropdown, press
+   **Update preview** to recount, then **Import**.
+
+The preview is the importer itself run with nothing written, so the numbers it shows are the
+numbers you get. Semicolon-, tab- and pipe-separated files work, as do files with no header
+row at all (the columns come through as *Column 1*, *Column 2*, … for you to map).
+
+**Consent** is the one question it asks, and it is unchanged:
 
 - **Unticked (the default)** — everyone arrives **pending**: on the list, never emailed until
   they confirm for themselves.
@@ -659,18 +676,33 @@ whether you already hold these people's consent.
 Either way **no confirmation emails are sent by an import**. Mailing a freshly imported list
 in one go is the fastest way to get a sending domain blocked.
 
-**On the command line**, same rules:
+**People who already opted out are never re-added.** If the file has a status column, rows
+marked `unsubscribed`, `cleaned`, `bounced` or `complained` are skipped and counted
+separately. Re-adding someone who left is the expensive kind of mistake, and an export from
+another tool usually carries them.
+
+**On the command line**, same rules and the same detection:
 
 ```bash
 python manage.py export_subscribers --output list.csv
-python manage.py import_subscribers list.csv               # imports as PENDING
-python manage.py import_subscribers list.csv --confirmed   # only for a list you have consent for
+python manage.py import_subscribers list.csv                 # imports as PENDING
+python manage.py import_subscribers list.csv --confirmed     # only for a list you have consent for
+python manage.py import_subscribers list.csv --dry-run       # count it, write nothing
+python manage.py import_subscribers list.csv --map email=Subscriber --map name="Full Name"
 ```
 
-CSV columns: `email` (required), `name`, `groups` (`"Group: Value; Group2: Value2"`). Import
-skips invalid/blank emails, applies groups, never sends opt-in emails, and never downgrades an
-already-confirmed subscriber. Admin and command line share one implementation
-(`prblm_mailer/csv_io.py`), so an export round-trips through either.
+Columns read on the way in: the **email address** (required), **name** (or **first** +
+**last**, combined), **groups** (`"Group: Value; Group2: Value2"`) and **status**. Dates and
+engagement columns (sent, opens, clicks) are ignored. Addresses are trimmed and lowercased,
+an address repeated inside the file is imported once, and an existing subscriber is matched
+whatever the case — so a re-import can't create a second row for the same person. An
+already-confirmed subscriber is never downgraded.
+
+If no column can be read as an email address, the import **stops and says so**, naming the
+headers it saw. It never reports a cheerful "0 imported".
+
+Admin and command line share one implementation (`prblm_mailer/csv_io.py`), so an export
+round-trips through either.
 
 ---
 

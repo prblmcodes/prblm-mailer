@@ -3,6 +3,9 @@
 A separate page from the snippet editor so "write it" and "send it" stay distinct.
 Sending is synchronous — one Mailgun batch call covers 1000 recipients.
 """
+import pathlib
+import re
+
 from django.contrib import messages
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -183,50 +186,151 @@ def export_subscribers(request):
     return response
 
 
+# Where an upload waits between the two steps of the import. Not the session:
+# a subscriber list is far too big for a cookie and has no business in one.
+IMPORT_STASH_DIR = "prblm-mailer-imports"
+IMPORT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+STASH_MAX_AGE = 6 * 60 * 60
+
+
+def _stash_path(token):
+    """The temp file for `token`, or None if the token isn't one we issued.
+
+    The pattern check is what stops a crafted token walking out of the directory.
+    """
+    import tempfile
+
+    if not IMPORT_TOKEN_RE.match(token or ""):
+        return None
+    return pathlib.Path(tempfile.gettempdir()) / IMPORT_STASH_DIR / f"{token}.csv"
+
+
+def _stash_upload(text):
+    """Park the uploaded text and return its token, sweeping anything stale first."""
+    import secrets
+    import tempfile
+    import time
+
+    directory = pathlib.Path(tempfile.gettempdir()) / IMPORT_STASH_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - STASH_MAX_AGE
+    for old in directory.glob("*.csv"):
+        try:
+            if old.stat().st_mtime < cutoff:
+                old.unlink()
+        except OSError:  # another request got there first
+            pass
+
+    token = secrets.token_urlsafe(24)
+    path = directory / f"{token}.csv"
+    path.write_text(text, encoding="utf-8")
+    return token
+
+
+def _decode(upload):
+    """The upload as text. Falls back to cp1252, which is what a spreadsheet on
+    Windows writes when it doesn't write UTF-8 — and which decodes any byte, so
+    this never leaves the admin with 'that file isn't text'."""
+    raw = upload.read()
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("latin-1")
+
+
 @require_admin_access
 def import_subscribers(request):
-    """Upload a CSV of subscribers. Same rules as the management command.
+    """Upload a CSV, confirm which column is which, then import. Same rules as the
+    management command.
 
-    Consent is the whole story here: rows land pending unless the uploader
-    explicitly states they already hold consent, and no opt-in emails are sent
-    either way (see `csv_io.import_rows`).
+    Two steps because the column names in a real export are anybody's guess: the
+    plugin detects them, shows you what it found over a sample of the file and a
+    count of what would happen, and lets you correct it before anything is written.
+
+    Consent is unchanged and is the whole story: rows land pending unless the
+    uploader states they already hold consent, no opt-in emails are sent either way,
+    and a row whose status says they unsubscribed elsewhere is never added
+    (see `csv_io.import_rows`).
     """
-    import io
-
     from django.http import Http404
 
-    from .csv_io import import_rows, resolve_newsletter
+    from .csv_io import (MAPPING_KEYS, NoEmailColumn, detect_columns, import_rows,
+                         read_table, resolve_newsletter, sample_rows)
 
     newsletter = resolve_newsletter()
     if newsletter is None:
         raise Http404("No newsletter list configured.")
 
-    if request.method == "POST":
+    if request.method != "POST":
+        return render(request, "prblm_mailer/import_subscribers.html",
+                      {"newsletter": newsletter})
+
+    token = request.POST.get("token") or ""
+    if token:
+        path = _stash_path(token)
+        if path is None or not path.exists():
+            messages.error(request, "That upload has expired — choose the file again.")
+            return redirect(reverse("prblm_mailer_import_subscribers"))
+        text = path.read_text(encoding="utf-8")
+    else:
         upload = request.FILES.get("csv_file")
         if upload is None:
             messages.error(request, "Choose a CSV file to import.")
             return redirect(reverse("prblm_mailer_import_subscribers"))
+        text = _decode(upload)
+        token = _stash_upload(text)
 
-        confirmed = request.POST.get("confirmed") == "on"
-        try:
-            text = io.TextIOWrapper(upload.file, encoding="utf-8-sig", newline="")
-            created, updated, skipped, bad = import_rows(
-                text, newsletter, confirmed=confirmed)
-        except UnicodeDecodeError:
-            messages.error(request, "That file isn't UTF-8 text — export it as CSV and retry.")
-            return redirect(reverse("prblm_mailer_import_subscribers"))
-        except Exception as exc:  # noqa: BLE001 — a bad CSV must not 500 the admin
-            messages.error(request, f"Import failed: {exc}")
-            return redirect(reverse("prblm_mailer_import_subscribers"))
+    headers, rows = read_table(text)
+    if not headers:
+        messages.error(request, "That file has no readable rows.")
+        return redirect(reverse("prblm_mailer_import_subscribers"))
 
+    # The dropdowns on the mapping screen, once chosen, win over detection.
+    chosen = {key: request.POST.get(f"map_{key}") or None for key in MAPPING_KEYS}
+    mapping = chosen if any(chosen.values()) else detect_columns(headers, rows)
+    mapping = {key: (value if value in headers else None) for key, value in mapping.items()}
+
+    confirmed = request.POST.get("confirmed") == "on"
+    committing = request.POST.get("action") == "import"
+
+    try:
+        result = import_rows(text, newsletter, confirmed=confirmed,
+                             mapping=mapping if mapping.get("email") else None,
+                             dry_run=not committing)
+    except NoEmailColumn:
+        result = None
+    except Exception as exc:  # noqa: BLE001 — a bad CSV must not 500 the admin
+        messages.error(request, f"Import failed: {exc}")
+        return redirect(reverse("prblm_mailer_import_subscribers"))
+
+    if committing and result is not None:
+        _stash_path(token).unlink(missing_ok=True)
         state = "confirmed" if confirmed else "pending (they must still confirm)"
-        messages.success(
-            request,
-            f"Imported as {state}: {created} new, {updated} already on the list, "
-            f"{skipped} skipped.",
-        )
-        if bad:
-            messages.warning(request, "Skipped invalid addresses: " + ", ".join(bad[:10]))
+        messages.success(request, f"Imported as {state}: {result.summary()}.")
+        if result.bad_emails:
+            messages.warning(
+                request,
+                f"{len(result.bad_emails)} address(es) weren't valid, including: "
+                + ", ".join(result.bad_emails[:10]))
         return redirect("wagtailsnippets_prblm_mailer_subscriber:list")
 
-    return render(request, "prblm_mailer/import_subscribers.html", {"newsletter": newsletter})
+    return render(request, "prblm_mailer/import_subscribers_map.html", {
+        "newsletter": newsletter,
+        "token": token,
+        "headers": headers,
+        "mapping": result.mapping if result else mapping,
+        "fields": [
+            ("email", "Email address", True),
+            ("name", "Name", False),
+            ("first_name", "First name", False),
+            ("last_name", "Last name", False),
+            ("groups", "Groups", False),
+            ("status", "Status", False),
+        ],
+        "samples": sample_rows(rows),
+        "row_count": len(rows),
+        "preview": result,
+        "confirmed": confirmed,
+    })

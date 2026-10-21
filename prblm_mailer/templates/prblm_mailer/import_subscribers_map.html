@@ -1,0 +1,131 @@
+{% extends "wagtailadmin/base.html" %}
+{% load wagtailadmin_tags prblm_mailer_tags %}
+
+{% block titletag %}Import subscribers — check the columns{% endblock %}
+
+{% comment %}
+  Step two: what the plugin thinks each column is, a few real rows from the file,
+  and what the import would do. The counts come from the same function that does
+  the import, run with dry_run=True, so they can't promise something different.
+
+  "Update preview" re-posts the mapping without committing; "Import" commits. No
+  JavaScript, because a wrong guess here writes to somebody's mailing list and the
+  round-trip is worth more than the keystroke it saves.
+{% endcomment %}
+{% block content %}
+  {% include "wagtailadmin/shared/headers/slim_header.html" with title="Check the columns" subtitle=newsletter.title icon="group" %}
+
+  <div class="nice-padding" style="max-width: 900px;">
+    <form method="POST" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="token" value="{{ token }}">
+
+      {% if preview and preview.mapping.email %}
+        <p>
+          Read <strong>{{ row_count }}</strong> row{{ row_count|pluralize }} from your file,
+          using <code>{{ preview.mapping.email }}</code> as the email address.
+        </p>
+      {% else %}
+        <div class="help-block help-critical">
+          <p>
+            <strong>Couldn't tell which column holds the email address.</strong>
+            Pick it below — nothing will be imported until you do.
+          </p>
+        </div>
+      {% endif %}
+
+      <h2 style="margin-top:1.5em;">Columns</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;">
+        {% for key, label, required in fields %}
+          <div>
+            <label class="w-block" for="map_{{ key }}">
+              <strong>{{ label }}</strong>{% if required %} <span style="color:#cd4444;">*</span>{% endif %}
+            </label>
+            <select name="map_{{ key }}" id="map_{{ key }}" style="width:100%;box-sizing:border-box;">
+              <option value="">— not in this file —</option>
+              {% for header in headers %}
+                <option value="{{ header }}"{% if mapping|get_item:key == header %} selected{% endif %}>{{ header }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endfor %}
+      </div>
+      <p class="help-block">
+        Only these are read. Dates and engagement columns (sent, opens, clicks) are ignored.
+        Use <strong>Name</strong>, or <strong>First</strong> + <strong>Last</strong> together —
+        not both.
+      </p>
+
+      <h2 style="margin-top:1.5em;">The first few rows</h2>
+      <div style="overflow-x:auto;">
+        <table class="listing">
+          <thead><tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}</tr></thead>
+          <tbody>
+            {% for row in samples %}
+              <tr>{% for header in headers %}<td>{{ row|get_item:header|default:"—" }}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if preview %}
+        <h2 style="margin-top:1.5em;">What this will do</h2>
+        <ul>
+          <li><strong>{{ preview.created }}</strong> new subscriber{{ preview.created|pluralize }}</li>
+          <li><strong>{{ preview.updated }}</strong> already on the list</li>
+          <li>
+            <strong>{{ preview.skipped }}</strong> skipped
+            {% if preview.invalid or preview.duplicates or preview.opted_out %}
+              —
+              {% if preview.invalid %}{{ preview.invalid }} invalid{% endif %}
+              {% if preview.duplicates %}{% if preview.invalid %}, {% endif %}{{ preview.duplicates }} repeated in the file{% endif %}
+              {% if preview.opted_out %}{% if preview.invalid or preview.duplicates %}, {% endif %}{{ preview.opted_out }} opted out elsewhere{% endif %}
+            {% endif %}
+          </li>
+        </ul>
+        {% if preview.opted_out %}
+          <div class="help-block help-info">
+            <p>
+              The status column says {{ preview.opted_out }} of these people unsubscribed
+              (or bounced) wherever this file came from. They won't be added — re-adding
+              someone who opted out is how a sending domain gets reported.
+            </p>
+          </div>
+        {% endif %}
+        {% if preview.bad_emails %}
+          <p class="help-block help-warning">
+            Not valid addresses: {% for bad in preview.bad_emails|slice:":10" %}<code>{{ bad }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}{% if preview.bad_emails|length > 10 %} and more{% endif %}.
+          </p>
+        {% endif %}
+      {% endif %}
+
+      <div class="help-block help-warning" style="margin-top:1.5em;">
+        <p>
+          <label>
+            <input type="checkbox" name="confirmed" id="confirmed"{% if confirmed %} checked{% endif %}>
+            <strong>These people have already consented to receive this newsletter.</strong>
+          </label>
+        </p>
+        <p>
+          Leave this unticked and everyone imports as <strong>pending</strong> — on the list,
+          but never emailed until they confirm for themselves. Tick it only for a list whose
+          consent you actually hold; it marks them confirmed immediately, and they will
+          receive the next newsletter you send.
+        </p>
+        <p>
+          Either way, <strong>no confirmation emails are sent by this import</strong>.
+        </p>
+      </div>
+
+      <button type="submit" name="action" value="preview" class="button button-secondary">
+        Update preview
+      </button>
+      <button type="submit" name="action" value="import" class="button">
+        Import {% if preview and preview.created %}{{ preview.created }} subscriber{{ preview.created|pluralize }}{% endif %}
+      </button>
+      <a href="{% url 'prblm_mailer_import_subscribers' %}" class="button button-secondary">
+        Start over
+      </a>
+    </form>
+  </div>
+{% endblock %}

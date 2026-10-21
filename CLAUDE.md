@@ -89,8 +89,10 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
   `WAGTAILADMIN_BASE_URL` unset, `W002` if the Site domain is still `example.com`, `W003` if
   `NEWSLETTER_USE_HTTPS` is on for an http base URL.
 - `csv_io.py` — one implementation of the subscriber CSV rules (`export_rows`, `import_rows`,
-  `parse_groups`), shared by the management commands and the admin's Import/Export buttons so
-  the two can't drift on consent semantics.
+  `read_table`, `detect_columns`, `parse_groups`), shared by the management commands and the
+  admin's Import/Export buttons so the two can't drift on consent semantics. `import_rows`
+  takes an optional `mapping` (explicit columns) and `dry_run` (count, write nothing) — the
+  admin's preview *is* a dry run, so it can't promise what the import won't do.
 - `urls.py` (this package's routes, namespaced `prblm_mailer`), `urls_bundle.py` (one include
   that mounts `/mailer/`, `/newsletter/`, `/anymail/`).
 - `__init__.py` — `with_required_apps(INSTALLED_APPS)` / `required_apps()` (import-light; safe
@@ -214,12 +216,38 @@ Gotchas these three taught us:
   becoming a `ListValue`, and Wagtail 6's post-save indexer then dies on the missing
   `bound_blocks`. Build such fixtures through `to_python`, which is what the database does.
 
+## 0.4.0b1 changes (CSV import from anywhere)
+The importer only read a column literally called `email`, so a 686-row export whose column
+was `Subscriber` imported **nothing** and said "0 new, 686 skipped" — an empty cell wasn't
+even added to `bad_emails`, so there was no hint which column should have been the address.
+
+- **Column detection** (`detect_columns`): header aliases first, then value-sniffing — the
+  column where ≥70% of a 20-row sample matches the email pattern. A "notes" column holding
+  the odd address can't win. `--map`/the admin dropdowns override it; `NoEmailColumn` is
+  raised (not a silent zero) when nothing can be read as an address.
+- **`read_table`** sniffs the delimiter (`,;\t|`) and decides the header row itself:
+  `csv.Sniffer().has_header()` read `email,status` as *data* and would have eaten somebody's
+  first subscriber, so the rule is now "does this row look like data?" — any cell an address,
+  or everything numeric. Ragged rows are padded so one short line can't shift later columns.
+- **Two-step admin flow** — upload parks the text in a temp file keyed by an unguessable
+  token (not the session: a subscriber list has no business in a cookie), then the mapping
+  screen shows the detected columns, sample rows and a dry-run count. Tokens are pattern-
+  checked before being joined to a path, and stale files are swept on each upload.
+- **Status is honoured**: `unsubscribed`/`cleaned`/`bounced`/`complained` rows are skipped and
+  counted, so importing another tool's export can't undo an unsubscribe. `Subscribed` holding
+  a *date* is not treated as a status (`_looks_like_status`), which the real failing file did.
+- **Normalisation**: addresses trimmed + lowercased, matched `__iexact` against existing rows
+  so a re-import can't create a second row for the same person, de-duped within the file.
+- `ImportResult` is a **4-tuple subclass**, so `created, updated, skipped, bad = import_rows(…)`
+  still works; the breakdown (`invalid`/`duplicates`/`opted_out`/`mapping`) rides along as
+  attributes with a `summary()` for the admin message.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
   JS — an editable install hides this because it reads the source tree. Verify after any
   packaging change by building and counting: the wheel must contain every template, the
-  admin JS and the 30 social icon PNGs (27 templates + 31 static files at 0.3.0b1).
+  admin JS and the 30 social icon PNGs (28 templates + 31 static files at 0.4.0b1).
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.
