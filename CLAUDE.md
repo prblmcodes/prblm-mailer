@@ -267,12 +267,27 @@ write path uses `.update()` to dodge django-newsletter's auto-consent `save()`, 
   dropdowns exist because exports split the name, and they are joined on the way in. Storing
   the parts would need a model of our own — deliberately not done.
 
+## 0.5.1b1 changes (groups from a plain column)
+`parse_groups` required a colon in every piece, so a mapped column holding plain text
+(`Essex`, not `Location: Essex`) produced an empty list — and `apply_tags` returns early on
+an empty list, so mapping the column did nothing at all, silently. Same shape as the original
+email-column bug: no damage, no message, no effect.
+
+- `parse_groups(raw, default_group=None)` now files a colon-less piece under `default_group`,
+  and `import_rows` passes **the mapped column's own header** — so a `Location` column of
+  towns becomes the Location group. The `Group: Value` form still wins where present, so the
+  plugin's own export round-trips unchanged.
+- **Commas are deliberately not separators.** A value is as likely to contain one
+  ("Leeds, West Yorkshire") as to be a list; `;` stays the separator.
+- `ImportResult.grouped` counts rows that carried a usable group, and the mapping screen says
+  so — an empty column now reports "No rows carry a group" instead of looking like it worked.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
   JS — an editable install hides this because it reads the source tree. Verify after any
   packaging change by building and counting: the wheel must contain every template, the
-  admin JS and the 30 social icon PNGs (28 templates + 31 static files at 0.5.0b1).
+  admin JS and the 30 social icon PNGs (28 templates + 31 static files at 0.5.1b1).
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.

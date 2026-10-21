@@ -596,3 +596,64 @@ class SubscribeDateAdminTests(TestCase):
 
         self.assertEqual(
             Subscription.objects.get(email_field="a@x.co").subscribe_date.year, 2024)
+
+
+@override_settings(PRBLM_MAILER={"NEWSLETTER_SLUG": "main"})
+class GroupColumnTests(TestCase):
+    """A groups column from anywhere, not just this plugin's own export format."""
+
+    def setUp(self):
+        self.newsletter = Newsletter.objects.create(
+            slug="main", title="L", email="h@x.co", sender="X")
+
+    def run_import(self, text, **kw):
+        from prblm_mailer.csv_io import import_rows
+
+        return import_rows(text, self.newsletter, **kw)
+
+    def tags(self, email="a@x.co"):
+        sub = Subscription.objects.get(email_field=email)
+        return {(t.group_name, t.value_label) for t in sub.tags.all()}
+
+    def test_a_plain_column_is_filed_under_its_own_name(self):
+        # The real case: a "Location" column holding "Essex", not "Location: Essex".
+        result = self.run_import(
+            "email,Location\na@x.co,Essex\n", mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(self.tags(), {("Location", "Essex")})
+        self.assertEqual(result.grouped, 1)
+
+    def test_the_export_format_still_round_trips(self):
+        self.run_import('email,groups\na@x.co,"Instrument: Guitar; City: Leeds"\n')
+        self.assertEqual(self.tags(), {("Instrument", "Guitar"), ("City", "Leeds")})
+
+    def test_plain_and_prefixed_values_can_be_mixed(self):
+        self.run_import(
+            'email,Location\na@x.co,"Essex; City: Leeds"\n',
+            mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(self.tags(), {("Location", "Essex"), ("City", "Leeds")})
+
+    def test_a_comma_inside_a_value_is_not_a_separator(self):
+        self.run_import(
+            'email,Location\na@x.co,"Leeds, West Yorkshire"\n',
+            mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(self.tags(), {("Location", "Leeds, West Yorkshire")})
+
+    def test_blank_cells_contribute_nothing(self):
+        result = self.run_import(
+            "email,Location\na@x.co,\nb@x.co,Essex\n",
+            mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(self.tags(), set())
+        self.assertEqual(result.grouped, 1)        # only the row that had a value
+
+    def test_an_empty_column_is_reported_as_nothing_grouped(self):
+        # The symptom that started this: mapping a column and seeing no effect.
+        result = self.run_import(
+            "email,Location\na@x.co,\nb@x.co,\n",
+            mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(result.grouped, 0)
+
+    def test_an_existing_group_answer_is_replaced_not_duplicated(self):
+        for value in ("Essex", "Suffolk"):
+            self.run_import(f"email,Location\na@x.co,{value}\n",
+                            mapping={"email": "email", "groups": "Location"})
+        self.assertEqual(self.tags(), {("Location", "Suffolk")})

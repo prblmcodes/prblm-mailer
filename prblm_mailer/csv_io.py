@@ -77,7 +77,7 @@ class ImportResult(tuple):
 
     def __new__(cls, created, updated, skipped, bad_emails,
                 invalid=0, duplicates=0, opted_out=0, mapping=None, total=0,
-                unreadable_dates=0, day_first=True):
+                unreadable_dates=0, day_first=True, grouped=0):
         self = super().__new__(cls, (created, updated, skipped, bad_emails))
         self.created, self.updated, self.skipped = created, updated, skipped
         self.bad_emails = bad_emails
@@ -87,6 +87,9 @@ class ImportResult(tuple):
         # A date nobody can read never costs a subscriber — it is reported instead.
         self.unreadable_dates = unreadable_dates
         self.day_first = day_first
+        # How many rows carried a usable group, so a column mapped to Groups that
+        # contributes nothing says so instead of looking like it worked.
+        self.grouped = grouped
         return self
 
     def summary(self):
@@ -109,16 +112,30 @@ def groups_string(subscription):
     )
 
 
-def parse_groups(raw):
-    """"Group: Value; Group2: Value2" -> [("Group","Value"), ("Group2","Value2")]."""
+def parse_groups(raw, default_group=None):
+    """"Group: Value; Group2: Value2" -> [("Group","Value"), ("Group2","Value2")].
+
+    A piece with no colon is a plain value, which is what a column from anywhere
+    else holds — `Essex`, not `Location: Essex`. It takes `default_group` as its
+    group name, and the importer passes the column's own header, so a `Location`
+    column of towns becomes the Location group. Without a default such a piece is
+    dropped, because there would be nothing to file it under.
+
+    Several values separate with `;`. Commas are deliberately *not* separators: a
+    value is as likely to contain one ("Leeds, West Yorkshire") as to be a list.
+    """
     pairs = []
     for chunk in (raw or "").split(";"):
         chunk = chunk.strip()
+        if not chunk:
+            continue
         if ":" in chunk:
             group, value = chunk.split(":", 1)
             group, value = group.strip(), value.strip()
-            if group and value:
-                pairs.append((group, value))
+        else:
+            group, value = (default_group or "").strip(), chunk
+        if group and value:
+            pairs.append((group, value))
     return pairs
 
 
@@ -409,9 +426,11 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
         )
 
     created = updated = invalid = duplicates = opted_out = unreadable_dates = 0
+    grouped = 0
     bad_emails = []
     seen = set()
 
+    groups_header = mapping.get("groups")
     date_header = mapping.get("subscribe_date")
     day_first = detect_date_order(
         [r.get(date_header, "") for r in rows[:SNIFF_ROWS]]) if date_header else True
@@ -435,7 +454,10 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
                 continue
 
         name = _row_name(row, mapping)
-        groups = parse_groups(row.get(mapping.get("groups")) or "")
+        # The column's own header names the group for plain values.
+        groups = parse_groups(row.get(groups_header) or "", default_group=groups_header)
+        if groups:
+            grouped += 1
 
         raw_date = (row.get(date_header) or "").strip() if date_header else ""
         when = parse_date_value(raw_date, day_first) if raw_date else None
@@ -488,7 +510,7 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
         created, updated, invalid + duplicates + opted_out, bad_emails,
         invalid=invalid, duplicates=duplicates, opted_out=opted_out,
         mapping=mapping, total=len(rows),
-        unreadable_dates=unreadable_dates, day_first=day_first,
+        unreadable_dates=unreadable_dates, day_first=day_first, grouped=grouped,
     )
 
 

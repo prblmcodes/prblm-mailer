@@ -692,12 +692,19 @@ python manage.py import_subscribers list.csv --map email=Subscriber --map name="
 ```
 
 Columns read on the way in: the **email address** (required), **name** (or **first** +
-**last**, combined into the single name field), **groups**
-(`"Group: Value; Group2: Value2"`), **status**, and the **subscribe date**. Engagement
+**last**, combined into the single name field), **groups** (any column — see below),
+**status**, and the **subscribe date**. Engagement
 columns (sent, opens, clicks) are ignored. Addresses are trimmed and lowercased,
 an address repeated inside the file is imported once, and an existing subscriber is matched
 whatever the case — so a re-import can't create a second row for the same person. An
 already-confirmed subscriber is never downgraded.
+
+**Groups take a plain column.** Map any column — `Location`, `Membership`, `Interest` — and
+its **own name becomes the group**, so `Essex` in a `Location` column files that person under
+*Location: Essex*. Separate several values with `;`, and write `Group: Value` yourself when
+you want to name the group something other than the column. Blank cells contribute nothing,
+and the preview tells you how many rows actually carry a group, so a column that turns out to
+be empty says so rather than looking like it worked.
 
 **Subscribe dates carry over.** Map the column holding the date people originally joined and
 it's kept, so your list doesn't look like everyone signed up the day you migrated. ISO,

@@ -56,6 +56,12 @@
         not both. <strong>Subscribe date</strong> keeps the date people originally joined;
         leave it unmapped and a confirmed import is dated today.
       </p>
+      <p class="help-block">
+        <strong>Groups</strong> takes a plain column: the column's own name becomes the group,
+        so <code>Location</code> holding <code>Essex</code> files people under
+        <em>Location: Essex</em>. Separate several values with <code>;</code>, and write
+        <code>Group: Value</code> if you want to name the group yourself.
+      </p>
 
       <h2 style="margin-top:1.5em;">The first few rows</h2>
       <div style="overflow-x:auto;">
@@ -92,6 +98,19 @@
               someone who opted out is how a sending domain gets reported.
             </p>
           </div>
+        {% endif %}
+        {% if preview.mapping.groups %}
+          <p class="help-block{% if not preview.grouped %} help-warning{% endif %}">
+            {% if preview.grouped %}
+              <strong>{{ preview.grouped }}</strong> row{{ preview.grouped|pluralize }} carry a group
+              from <code>{{ preview.mapping.groups }}</code>. A plain value is filed under the
+              column's own name — <code>Essex</code> in a <code>Location</code> column becomes
+              <em>Location: Essex</em>.
+            {% else %}
+              <strong>No rows carry a group.</strong> <code>{{ preview.mapping.groups }}</code>
+              looks empty — pick a different column, or leave Groups unmapped.
+            {% endif %}
+          </p>
         {% endif %}
         {% if preview.mapping.subscribe_date %}
           <p class="help-block">
