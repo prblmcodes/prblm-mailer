@@ -1,4 +1,5 @@
 """CSV import/export of subscribers."""
+import datetime
 import os
 import tempfile
 from io import StringIO
@@ -435,3 +436,163 @@ class ImportCommandTests(TestCase):
 
         with self.assertRaises(CommandError):
             self.run_command("Sent,Opens\n0,0\n1,2\n")
+
+
+class DateParsingTests(SimpleTestCase):
+    """Reading whatever date format the export happened to write."""
+
+    def parse(self, raw, day_first=True):
+        from prblm_mailer.csv_io import parse_date_value
+
+        return parse_date_value(raw, day_first)
+
+    def test_the_formats_exports_actually_use(self):
+        cases = {
+            "2025-09-17 07:16:57": (2025, 9, 17),      # the real file
+            "2025-09-17": (2025, 9, 17),
+            "2025-09-17T07:16:57Z": (2025, 9, 17),
+            "17/09/2025": (2025, 9, 17),
+            "17-09-2025": (2025, 9, 17),
+            "2025/09/17": (2025, 9, 17),
+            "17 Sep 2025": (2025, 9, 17),
+            "Sep 17, 2025": (2025, 9, 17),
+        }
+        for raw, (year, month, day) in cases.items():
+            with self.subTest(raw=raw):
+                parsed = self.parse(raw)
+                self.assertEqual((parsed.year, parsed.month, parsed.day), (year, month, day))
+
+    def test_parsed_dates_are_timezone_aware(self):
+        from django.utils import timezone
+
+        self.assertFalse(timezone.is_naive(self.parse("2025-09-17 07:16:57")))
+
+    def test_nonsense_is_rejected_rather_than_guessed(self):
+        for raw in ("", "   ", "not a date", "0", "n/a"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(self.parse(raw))
+
+    def test_day_first_and_month_first_both_work(self):
+        self.assertEqual(self.parse("03/04/2025", day_first=True).month, 4)
+        self.assertEqual(self.parse("03/04/2025", day_first=False).month, 3)
+
+    def test_the_order_is_decided_from_the_file(self):
+        from prblm_mailer.csv_io import detect_date_order
+
+        # 17 can only be a day; 13 can only be a month in a month-first file.
+        self.assertTrue(detect_date_order(["17/09/2025", "03/04/2025"]))
+        self.assertFalse(detect_date_order(["09/17/2025", "04/03/2025"]))
+        self.assertTrue(detect_date_order(["03/04/2025"]))        # no evidence -> day first
+
+
+@override_settings(PRBLM_MAILER={"NEWSLETTER_SLUG": "main"})
+class SubscribeDateImportTests(TestCase):
+    """The subscribe date a row ends up with."""
+
+    def setUp(self):
+        self.newsletter = Newsletter.objects.create(
+            slug="main", title="L", email="h@x.co", sender="X")
+
+    def run_import(self, text, **kw):
+        from prblm_mailer.csv_io import import_rows
+
+        return import_rows(text, self.newsletter, **kw)
+
+    def test_a_mapped_date_column_is_detected_and_kept(self):
+        # The real file's shape: the date lives under "Subscribed".
+        result = self.run_import(
+            "Subscriber,Sent,Subscribed\n"
+            'a@x.co,0,"2025-09-17 07:16:57"\n')
+        self.assertEqual(result.mapping["subscribe_date"], "Subscribed")
+        sub = Subscription.objects.get()
+        self.assertEqual((sub.subscribe_date.year, sub.subscribe_date.month), (2025, 9))
+
+    def test_a_status_word_column_is_not_read_as_a_date(self):
+        result = self.run_import("email,status\na@x.co,subscribed\n")
+        self.assertIsNone(result.mapping["subscribe_date"])
+        self.assertEqual(result.mapping["status"], "status")
+
+    def test_a_confirmed_row_without_a_date_gets_today(self):
+        self.run_import("email\na@x.co\n", confirmed=True)
+        self.assertIsNotNone(Subscription.objects.get().subscribe_date)
+
+    def test_a_pending_row_without_a_date_gets_none(self):
+        # They haven't subscribed yet; the date fills in when they confirm.
+        self.run_import("email\na@x.co\n")
+        self.assertIsNone(Subscription.objects.get().subscribe_date)
+
+    def test_an_unreadable_date_is_reported_not_fatal(self):
+        # One bad cell among good ones: the column is still a date column, and the
+        # row still imports — it just arrives without a date.
+        result = self.run_import(
+            "email,subscribe date\n"
+            "a@x.co,wibble\n"
+            "b@x.co,2025-09-17\nc@x.co,2025-09-18\n"
+            "d@x.co,2025-09-19\ne@x.co,2025-09-20\n")
+        self.assertEqual(result.created, 5)            # nobody lost over a bad date
+        self.assertEqual(result.unreadable_dates, 1)
+        self.assertIsNone(Subscription.objects.get(email_field="a@x.co").subscribe_date)
+        self.assertIsNotNone(Subscription.objects.get(email_field="b@x.co").subscribe_date)
+
+    def test_a_column_of_mostly_rubbish_is_not_treated_as_dates(self):
+        result = self.run_import(
+            "email,notes\na@x.co,hello\nb@x.co,2025-09-17\nc@x.co,goodbye\n")
+        self.assertIsNone(result.mapping["subscribe_date"])
+
+    def test_an_existing_date_is_never_overwritten(self):
+        from django.utils import timezone
+
+        original = timezone.now() - datetime.timedelta(days=365)
+        sub = Subscription.objects.create(
+            newsletter=self.newsletter, email_field="a@x.co")
+        Subscription.objects.filter(pk=sub.pk).update(subscribe_date=original)
+
+        self.run_import("email,subscribe date\na@x.co,2025-09-17\n")
+        sub.refresh_from_db()
+        self.assertEqual(sub.subscribe_date, original)
+
+    def test_an_explicit_mapping_picks_the_date_column(self):
+        self.run_import("email,joined on\na@x.co,2024-03-01\n",
+                        mapping={"email": "email", "subscribe_date": "joined on"})
+        self.assertEqual(Subscription.objects.get().subscribe_date.year, 2024)
+
+    def test_a_dry_run_still_writes_no_dates(self):
+        self.run_import("email,subscribe date\na@x.co,2025-09-17\n",
+                        confirmed=True, dry_run=True)
+        self.assertFalse(Subscription.objects.exists())
+
+
+@override_settings(PRBLM_MAILER={"NEWSLETTER_SLUG": "main"})
+class SubscribeDateAdminTests(TestCase):
+    """The Subscribe date dropdown on the mapping screen."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        Newsletter.objects.create(slug="main", title="L", email="h@x.co", sender="X")
+        user = get_user_model().objects.create_superuser("admin3", "a3@b.co", "pw")
+        self.client.force_login(user)
+
+    def upload(self, body):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        return self.client.post("/admin/subscribers/import/", {
+            "csv_file": SimpleUploadedFile("list.csv", body, content_type="text/csv")})
+
+    def test_the_date_column_is_offered_and_pre_selected(self):
+        page = self.upload(
+            b"Subscriber,Sent,Subscribed\n"
+            b'a@x.co,0,"2025-09-17 07:16:57"\n'
+            b'b@x.co,0,"2025-09-18 07:16:57"\n')
+        self.assertEqual(page.context["mapping"]["subscribe_date"], "Subscribed")
+        self.assertContains(page, "Subscribe date")
+        self.assertContains(page, "day/month/year")
+
+    def test_the_date_survives_the_import(self):
+        page = self.upload(b"email,joined\na@x.co,2024-03-01\nb@x.co,2024-03-02\n")
+        data = {"token": page.context["token"], "action": "import"}
+        data.update({f"map_{k}": v for k, v in page.context["mapping"].items() if v})
+        self.client.post("/admin/subscribers/import/", data)
+
+        self.assertEqual(
+            Subscription.objects.get(email_field="a@x.co").subscribe_date.year, 2024)

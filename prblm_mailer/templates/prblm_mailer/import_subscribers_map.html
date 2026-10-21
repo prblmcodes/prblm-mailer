@@ -51,9 +51,10 @@
         {% endfor %}
       </div>
       <p class="help-block">
-        Only these are read. Dates and engagement columns (sent, opens, clicks) are ignored.
-        Use <strong>Name</strong>, or <strong>First</strong> + <strong>Last</strong> together —
-        not both.
+        Only these are read; engagement columns (sent, opens, clicks) are ignored. Use
+        <strong>Name</strong>, or <strong>First</strong> + <strong>Last</strong> together —
+        not both. <strong>Subscribe date</strong> keeps the date people originally joined;
+        leave it unmapped and a confirmed import is dated today.
       </p>
 
       <h2 style="margin-top:1.5em;">The first few rows</h2>
@@ -91,6 +92,14 @@
               someone who opted out is how a sending domain gets reported.
             </p>
           </div>
+        {% endif %}
+        {% if preview.mapping.subscribe_date %}
+          <p class="help-block">
+            Subscribe dates read from <code>{{ preview.mapping.subscribe_date }}</code>
+            as <strong>{% if preview.day_first %}day/month/year{% else %}month/day/year{% endif %}</strong>{% if preview.unreadable_dates %};
+            {{ preview.unreadable_dates }} couldn't be read and those rows will import without a
+            date{% endif %}.
+          </p>
         {% endif %}
         {% if preview.bad_emails %}
           <p class="help-block help-warning">

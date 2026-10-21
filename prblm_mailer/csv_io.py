@@ -14,6 +14,7 @@ looking at the values, and the caller can override the result with an explicit
 groups and status mean anything on the way in.
 """
 import csv
+import datetime
 import io
 import re
 
@@ -32,6 +33,13 @@ FIRST_NAME_ALIASES = ("first name", "firstname", "given name", "forename")
 LAST_NAME_ALIASES = ("last name", "lastname", "surname", "family name")
 GROUP_ALIASES = ("groups", "group", "tags", "tag", "interests", "segments")
 STATUS_ALIASES = ("status", "subscription status", "member status", "state", "subscribed")
+# "subscribed" sits in both lists on purpose: an export uses it for a status word or
+# for a date, and only the values can say which. `detect_columns` decides by content.
+DATE_ALIASES = (
+    "subscribe date", "subscribed", "subscription date", "date subscribed",
+    "signup date", "sign up date", "opt in date", "date added", "joined",
+    "confirmed at", "created", "created at", "date",
+)
 
 # Status values that mean "this person has already left, or can't be reached".
 # Importing them would quietly undo an unsubscribe someone made elsewhere, which is
@@ -47,7 +55,8 @@ OPTED_OUT_STATUSES = {
 SNIFF_ROWS = 20
 SNIFF_THRESHOLD = 0.7
 
-MAPPING_KEYS = ("email", "name", "first_name", "last_name", "groups", "status")
+MAPPING_KEYS = ("email", "name", "first_name", "last_name", "groups", "status",
+                "subscribe_date")
 
 
 class NoEmailColumn(ValueError):
@@ -67,13 +76,17 @@ class ImportResult(tuple):
     """
 
     def __new__(cls, created, updated, skipped, bad_emails,
-                invalid=0, duplicates=0, opted_out=0, mapping=None, total=0):
+                invalid=0, duplicates=0, opted_out=0, mapping=None, total=0,
+                unreadable_dates=0, day_first=True):
         self = super().__new__(cls, (created, updated, skipped, bad_emails))
         self.created, self.updated, self.skipped = created, updated, skipped
         self.bad_emails = bad_emails
         self.invalid, self.duplicates, self.opted_out = invalid, duplicates, opted_out
         self.mapping = mapping or {}
         self.total = total
+        # A date nobody can read never costs a subscriber — it is reported instead.
+        self.unreadable_dates = unreadable_dates
+        self.day_first = day_first
         return self
 
     def summary(self):
@@ -224,6 +237,14 @@ def detect_columns(headers, rows=()):
     if mapping["status"] and not _looks_like_status(mapping["status"], rows):
         mapping["status"] = None
 
+    # Only believe a date column that holds dates — and never the column already
+    # taken as the status, which in a real export is often the same header.
+    date_header = first_alias(DATE_ALIASES)
+    if date_header and date_header != mapping["status"] and _looks_like_date(date_header, rows):
+        mapping["subscribe_date"] = date_header
+    else:
+        mapping["subscribe_date"] = None
+
     if not mapping["email"]:
         mapping["email"] = _sniff_email_column(headers, rows)
     return mapping
@@ -251,6 +272,86 @@ def _sniff_email_column(headers, rows):
     return best
 
 
+# Tried in order after ISO. The slash/dot forms come in both orders, and which one
+# a file means is decided per column by `detect_date_order` rather than assumed.
+_DATE_FORMATS_DAY_FIRST = ("%d/%m/%Y %H:%M:%S", "%d/%m/%Y %H:%M", "%d/%m/%Y",
+                           "%d-%m-%Y %H:%M:%S", "%d-%m-%Y", "%d.%m.%Y")
+_DATE_FORMATS_MONTH_FIRST = ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y %H:%M", "%m/%d/%Y",
+                             "%m-%d-%Y %H:%M:%S", "%m-%d-%Y", "%m.%d.%Y")
+_DATE_FORMATS_UNAMBIGUOUS = ("%Y/%m/%d %H:%M:%S", "%Y/%m/%d", "%d %b %Y", "%d %B %Y",
+                             "%b %d, %Y", "%B %d, %Y", "%d %b %Y %H:%M:%S")
+
+
+def detect_date_order(values):
+    """True when a column's dates are day-first.
+
+    Decided from the file rather than from a setting: `03/04/2025` is March in a US
+    export and April in a British one, and only a value like `17/09/2025` settles
+    it. With no evidence either way it stays day-first, and the import reports which
+    reading it used so a wrong guess is visible rather than silent.
+    """
+    day_first_evidence = month_first_evidence = 0
+    for value in values:
+        parts = re.split(r"[/.\-]", (value or "").strip())[:2]
+        if len(parts) < 2 or not all(p.isdigit() for p in parts):
+            continue
+        first, second = int(parts[0]), int(parts[1])
+        if first > 12 and second <= 12:
+            day_first_evidence += 1
+        elif second > 12 and first <= 12:
+            month_first_evidence += 1
+    return month_first_evidence <= day_first_evidence
+
+
+def parse_date_value(raw, day_first=True):
+    """A timezone-aware datetime from whatever the export wrote, or None."""
+    from django.utils import timezone
+
+    value = (raw or "").strip()
+    if not value:
+        return None
+
+    parsed = None
+    if value.isdigit() and len(value) in (10, 13):         # a unix timestamp
+        try:
+            seconds = int(value) / (1000 if len(value) == 13 else 1)
+            parsed = datetime.datetime.fromtimestamp(seconds, tz=datetime.timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            parsed = None
+    if parsed is None:
+        iso = value.replace("Z", "+00:00")
+        try:
+            parsed = datetime.datetime.fromisoformat(iso)
+        except ValueError:
+            parsed = None
+    if parsed is None:
+        ordered = _DATE_FORMATS_DAY_FIRST if day_first else _DATE_FORMATS_MONTH_FIRST
+        for fmt in ordered + _DATE_FORMATS_UNAMBIGUOUS:
+            try:
+                parsed = datetime.datetime.strptime(value, fmt)
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return None
+
+    if timezone.is_naive(parsed):
+        # USE_TZ is on in any modern Django; a naive value here would warn and be
+        # read as UTC anyway, so say explicitly that it is local time.
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _looks_like_date(header, rows):
+    """True if most of a column's values parse as a date."""
+    values = [r.get(header, "") for r in rows[:SNIFF_ROWS] if r.get(header, "").strip()]
+    if not values:
+        return False
+    day_first = detect_date_order(values)
+    readable = sum(1 for v in values if parse_date_value(v, day_first))
+    return readable / len(values) >= SNIFF_THRESHOLD
+
+
 def sample_rows(rows, limit=5):
     """The first few rows, for the mapping screen's preview."""
     return rows[:limit]
@@ -267,6 +368,19 @@ def _row_name(row, mapping):
             return name
     parts = [(row.get(mapping.get(key)) or "").strip() for key in ("first_name", "last_name")]
     return " ".join(p for p in parts if p)
+
+
+def _resolve_subscribe_date(when, confirmed):
+    """The date a row should carry: the file's, else today for a confirmed import.
+
+    A pending row deliberately gets nothing — they haven't subscribed yet, and the
+    date fills itself in when they click the confirmation link.
+    """
+    from django.utils import timezone
+
+    if when:
+        return when
+    return timezone.now() if confirmed else None
 
 
 def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False):
@@ -294,9 +408,13 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
             + (", ".join(headers) if headers else "(the file is empty)")
         )
 
-    created = updated = invalid = duplicates = opted_out = 0
+    created = updated = invalid = duplicates = opted_out = unreadable_dates = 0
     bad_emails = []
     seen = set()
+
+    date_header = mapping.get("subscribe_date")
+    day_first = detect_date_order(
+        [r.get(date_header, "") for r in rows[:SNIFF_ROWS]]) if date_header else True
 
     for row in rows:
         email = (row.get(mapping["email"]) or "").strip().lower()
@@ -318,6 +436,14 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
 
         name = _row_name(row, mapping)
         groups = parse_groups(row.get(mapping.get("groups")) or "")
+
+        raw_date = (row.get(date_header) or "").strip() if date_header else ""
+        when = parse_date_value(raw_date, day_first) if raw_date else None
+        if raw_date and when is None:
+            # Never skip a subscriber over a date nobody can read: fall back to the
+            # same rule as a row with no date at all, and report the count.
+            unreadable_dates += 1
+        subscribe_date = _resolve_subscribe_date(when, confirmed)
 
         if dry_run:
             # Matched case-insensitively, exactly as the write below does.
@@ -350,12 +476,19 @@ def import_rows(lines, newsletter, confirmed=False, mapping=None, dry_run=False)
             Subscription.objects.filter(pk=sub.pk).update(name_field=name)
 
         sub.refresh_from_db()
+
+        # Fill the date, never overwrite one: a real signup date already on the row
+        # is better evidence than anything a later import brings.
+        if subscribe_date and not sub.subscribe_date:
+            Subscription.objects.filter(pk=sub.pk).update(subscribe_date=subscribe_date)
+
         apply_tags(sub, groups)
 
     return ImportResult(
         created, updated, invalid + duplicates + opted_out, bad_emails,
         invalid=invalid, duplicates=duplicates, opted_out=opted_out,
         mapping=mapping, total=len(rows),
+        unreadable_dates=unreadable_dates, day_first=day_first,
     )
 
 

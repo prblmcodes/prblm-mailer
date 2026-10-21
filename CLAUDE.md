@@ -242,12 +242,37 @@ even added to `bad_emails`, so there was no hint which column should have been t
   still works; the breakdown (`invalid`/`duplicates`/`opted_out`/`mapping`) rides along as
   attributes with a `summary()` for the admin message.
 
+## 0.5.0b1 changes (subscribe date on import)
+`subscribe_date` is a real field on django-newsletter's `Subscription` and a column in the
+Subscribers listing, but an import left it NULL — including for confirmed rows, because the
+write path uses `.update()` to dodge django-newsletter's auto-consent `save()`, and
+`_subscribe()` (which sets the date) lives inside that `save()`.
+
+- **Mappable** — `subscribe_date` joins `MAPPING_KEYS`, so it appears as a dropdown on the
+  admin's mapping screen and works with `--map subscribe_date="Joined on"`.
+- **`parse_date_value`** handles ISO, `dd/mm/yyyy`, `mm/dd/yyyy`, dotted and dashed forms,
+  `17 Sep 2025`, `Sep 17, 2025` and unix timestamps; naive values are made aware in the
+  site's `TIME_ZONE`, which is the right reading of a date an export wrote in local time.
+- **`detect_date_order`** decides day-first vs month-first *from the column's own values*
+  (`17/09` can only be a day) rather than from a setting, defaulting to day-first with no
+  evidence, and the result is reported in the preview — a wrong guess is visible, not silent.
+- **`Subscribed` is the ambiguous header**: a status word in one export, a date in another.
+  `detect_columns` decides by content (`_looks_like_status` / `_looks_like_date`) and never
+  lets the status and date mappings claim the same column.
+- **Fallbacks**: a mapped date wins; otherwise a confirmed row is dated now and a pending row
+  gets nothing (they haven't subscribed yet). An existing date is never overwritten, and an
+  unreadable date costs a date, never the subscriber — `ImportResult.unreadable_dates`
+  reports the count.
+- **First/last name are input-side only.** `Subscription` has one `name_field`; the two
+  dropdowns exist because exports split the name, and they are joined on the way in. Storing
+  the parts would need a model of our own — deliberately not done.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
   JS — an editable install hides this because it reads the source tree. Verify after any
   packaging change by building and counting: the wheel must contain every template, the
-  admin JS and the 30 social icon PNGs (28 templates + 31 static files at 0.4.0b1).
+  admin JS and the 30 social icon PNGs (28 templates + 31 static files at 0.5.0b1).
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.

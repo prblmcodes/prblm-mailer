@@ -328,6 +328,7 @@ def import_subscribers(request):
             ("last_name", "Last name", False),
             ("groups", "Groups", False),
             ("status", "Status", False),
+            ("subscribe_date", "Subscribe date", False),
         ],
         "samples": sample_rows(rows),
         "row_count": len(rows),

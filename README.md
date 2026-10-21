@@ -692,11 +692,24 @@ python manage.py import_subscribers list.csv --map email=Subscriber --map name="
 ```
 
 Columns read on the way in: the **email address** (required), **name** (or **first** +
-**last**, combined), **groups** (`"Group: Value; Group2: Value2"`) and **status**. Dates and
-engagement columns (sent, opens, clicks) are ignored. Addresses are trimmed and lowercased,
+**last**, combined into the single name field), **groups**
+(`"Group: Value; Group2: Value2"`), **status**, and the **subscribe date**. Engagement
+columns (sent, opens, clicks) are ignored. Addresses are trimmed and lowercased,
 an address repeated inside the file is imported once, and an existing subscriber is matched
 whatever the case — so a re-import can't create a second row for the same person. An
 already-confirmed subscriber is never downgraded.
+
+**Subscribe dates carry over.** Map the column holding the date people originally joined and
+it's kept, so your list doesn't look like everyone signed up the day you migrated. ISO,
+`17/09/2025`, `09/17/2025`, `17 Sep 2025` and unix timestamps all read, and whether slashed
+dates are day-first or month-first is decided from the file itself (`17/09` can only be a
+day) — the preview says which reading it used. A date it can't read never costs you the
+subscriber: that row imports without one, and the count is reported.
+
+With no date column mapped, a **confirmed** import is dated today — you're asserting they're
+subscribed as of now — and a **pending** row gets no date at all, because they haven't
+subscribed yet; it fills itself in when they click the confirmation link. An existing date is
+never overwritten.
 
 If no column can be read as an email address, the import **stops and says so**, naming the
 headers it saw. It never reports a cheerful "0 imported".
