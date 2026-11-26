@@ -170,3 +170,37 @@ class EmailImageTests(TestCase):
         blocks = PACKAGE / "templates" / "prblm_mailer" / "blocks"
         bare = [p.name for p in blocks.glob("*.html") if "{% image " in p.read_text()]
         self.assertEqual(bare, [])
+
+
+class SubscriberAddUrlTests(TestCase):
+    """The Add button is hidden, but Wagtail still registers add/ — opened directly it
+    500'd (CreateView with no add_url_name). It must land somewhere deliberate instead."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_superuser("admin", "a@b.co", "pw")
+        self.client.force_login(user)
+
+    def url(self, name):
+        from django.urls import reverse
+
+        return reverse(f"wagtailsnippets_prblm_mailer_subscriber:{name}")
+
+    def test_add_url_redirects_to_the_list(self):
+        response = self.client.get(self.url("add"))
+        self.assertRedirects(response, self.url("list"), fetch_redirect_response=False)
+
+    def test_posting_to_it_creates_nobody(self):
+        response = self.client.post(self.url("add"), {"email_field": "sneaky@x.co"})
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(Subscription.objects.filter(email_field="sneaky@x.co").exists())
+
+    def test_the_list_explains_how_people_join(self):
+        response = self.client.get(self.url("add"), follow=True)
+        text = " ".join(str(m) for m in response.context["messages"])
+        self.assertIn("CSV import", text)
+
+    def test_still_no_add_button(self):
+        html = self.client.get(self.url("list")).content.decode()
+        self.assertNotIn(self.url("add"), html)

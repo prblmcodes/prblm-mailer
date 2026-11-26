@@ -3,6 +3,14 @@
 All notable changes, newest first. Each version is a git tag; what to do when moving between
 versions is in [docs/upgrading.md](docs/upgrading.md).
 
+## 0.6.1b1 — 2026-11-26
+
+### Fixed
+- Opening the Subscribers admin's add URL directly (`/admin/snippets/prblm_mailer/subscriber/add/`)
+  crashed with a server error on every supported Wagtail version. Subscribers can't be added by
+  hand, so there is no Add button — but the URL was still registered. It now returns you to the
+  Subscribers list with a note on how people join, and a link to Import CSV.
+
 ## 0.6.0b1 — 2026-11-26
 
 **Wagtail 8 and Django 6.1 support.** Supported range is now Wagtail 6–8, Django 5.0–6.1 and

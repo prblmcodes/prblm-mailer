@@ -46,7 +46,7 @@ Five minutes, nothing sent for real.
 **1. Install** — pin a release tag ([releases](https://github.com/prblmcodes/prblm-mailer/releases)):
 
 ```bash
-pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.0b1"
+pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.1b1"
 ```
 
 **2. Settings**

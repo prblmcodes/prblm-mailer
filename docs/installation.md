@@ -21,20 +21,20 @@ Requirements: Wagtail 6, 7 or 8 · Django 5.0–6.1 · Python 3.12+.
 From your site's project root, with its virtualenv active:
 
 ```bash
-pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.0b1"
+pip install "prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.1b1"
 ```
 
 Or add the same line to your `requirements.txt`:
 
 ```
-prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.0b1
+prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.1b1
 ```
 
 Each [release](https://github.com/prblmcodes/prblm-mailer/releases) also has a wheel attached,
 which installs without git:
 
 ```bash
-pip install https://github.com/prblmcodes/prblm-mailer/releases/download/v0.6.0b1/prblm_mailer-0.6.0b1-py3-none-any.whl
+pip install https://github.com/prblmcodes/prblm-mailer/releases/download/v0.6.1b1/prblm_mailer-0.6.1b1-py3-none-any.whl
 ```
 
 **Pin a tag, not `main`.** Tags never change, so every rebuild installs identical code;

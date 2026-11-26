@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.shortcuts import redirect
 from django.urls import path, reverse
 from wagtail import hooks
+from wagtail.admin import messages as admin_messages
 from wagtail.admin.action_menu import ActionMenuItem
 from wagtail.admin.widgets import HeaderButton
 from wagtail.snippets.models import register_snippet
@@ -123,6 +124,23 @@ class SubscriberEditView(EditView):
         return redirect("wagtailsnippets_prblm_mailer_subscriber:inspect", pk=kwargs.get("pk"))
 
 
+class SubscriberCreateView(CreateView):
+    """Nobody is added by hand either. Hiding the Add button (add_url_name=None) left
+    the add/ URL registered, and Wagtail's CreateView raises ImproperlyConfigured
+    without an add_url_name — so the URL is answered deliberately instead. It stays
+    registered: other Wagtail code may still reverse it."""
+
+    def dispatch(self, request, *args, **kwargs):
+        admin_messages.info(
+            request,
+            "Subscribers join through a signup form's double opt-in or a CSV import, "
+            "not by hand.",
+            buttons=[admin_messages.button(
+                reverse("prblm_mailer_import_subscribers"), "Import CSV")],
+        )
+        return redirect("wagtailsnippets_prblm_mailer_subscriber:list")
+
+
 class SubscriberViewSet(SnippetViewSet):
     """The list: read it, prune it, but don't hand-edit it. People join via the
     signup form (double opt-in) and leave via unsubscribe or a hard bounce."""
@@ -135,6 +153,7 @@ class SubscriberViewSet(SnippetViewSet):
     menu_order = 260
     inspect_view_enabled = True
     copy_view_enabled = False
+    add_view_class = SubscriberCreateView
     edit_view_class = SubscriberEditView
     index_view_class = SubscriberIndexView
     inspect_view_class = SubscriberInspectView

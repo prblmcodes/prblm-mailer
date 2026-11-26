@@ -325,6 +325,16 @@ Django 5.0–6.1 / django-newsletter 1.2–1.3.
 - django-newsletter 1.3's `NEWSLETTER_MAILER` doesn't touch us: the opt-in email goes through
   `send_optin`, not its `send_activation_email`.
 
+## 0.6.1b1 changes (subscriber add URL)
+- `add_url_name = None` hides the Add button but Wagtail still registers `add/`, and its
+  `CreateView` raises `ImproperlyConfigured` without an add URL → 500 when opened directly
+  (all versions, not an 8.1 regression; found by crawling the admin). `SubscriberCreateView`
+  now redirects to the list with an info message + Import CSV button, mirroring
+  `SubscriberEditView`. The URL pattern stays — other Wagtail code may reverse it.
+- **Hiding an admin button is not removing its URL.** When suppressing a snippet view, also
+  answer its URL deliberately, and crawl every `prblm_mailer` admin URL (reverse each name in
+  the resolver, GET it as a superuser, assert < 500) before a release.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no

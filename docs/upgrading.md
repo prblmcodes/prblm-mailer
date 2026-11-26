@@ -5,7 +5,7 @@
 1. Change the tag in your requirements:
 
    ```
-   prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.0b1
+   prblm-mailer @ git+https://github.com/prblmcodes/prblm-mailer.git@v0.6.1b1
    ```
 
 2. Install, migrate and check:
@@ -24,6 +24,11 @@ You can see which version you're on with `pip show prblm-mailer`. The full list 
 in the [CHANGELOG](../CHANGELOG.md).
 
 ---
+
+## To 0.6.1b1 (from 0.6.0b1)
+
+A bug fix: the Subscribers admin's add URL no longer crashes when opened directly. Nothing to
+do.
 
 ## To 0.6.0b1 (from 0.5.x)
 
