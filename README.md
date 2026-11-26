@@ -12,6 +12,7 @@ service, and without changing your project's code beyond a settings block and on
 | **Python** | 3.12+ |
 | **Sending** | Mailgun (via [django-anymail](https://github.com/anymail/django-anymail)) |
 | **Status** | Beta — settings and APIs may still change between minor versions |
+| **License** | [MIT](LICENSE) |
 
 ---
 
@@ -131,3 +132,8 @@ import/export, and the styled emails and pages. It never imports your project's 
 - **One mailing list per site** (`NEWSLETTER_SLUG`); use groups to target parts of it.
 - **Sending is synchronous** — one Mailgun call per 1,000 recipients, inside the request. Fine
   into the low thousands of subscribers; there is no background queue yet.
+
+## License
+
+[MIT](LICENSE) © 2026 prblm. Use it, change it and ship it, commercially or not; keep the
+copyright notice.

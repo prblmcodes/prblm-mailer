@@ -334,8 +334,8 @@ Django 5.0–6.1 / django-newsletter 1.2–1.3.
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.
-- **No LICENSE yet** (deferred by the owner, 2026-11-26). The repo is public, but without a
-  license nobody else may legally reuse it. Don't add one without asking.
+- **MIT licensed** (`LICENSE`, © prblm, chosen 2026-11-26). `pyproject` declares it as an SPDX
+  expression (PEP 639), which needs setuptools ≥77 — and forbids a `License ::` classifier.
 - Upper bounds (`wagtail<9`, `Django<6.2`, `django-newsletter<1.4`) are the newest versions
   tested, not known breakage. Widen only after a green run on the new version.
 

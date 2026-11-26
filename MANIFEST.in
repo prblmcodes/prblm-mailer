@@ -1,5 +1,6 @@
 # Keeps the sdist complete; the wheel gets these via [tool.setuptools.package-data].
 include README.md
+include LICENSE
 include CHANGELOG.md
 recursive-include docs *.md
 recursive-include prblm_mailer/templates *.html

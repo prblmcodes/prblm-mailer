@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]   # SPDX `license` expression (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "prblm-mailer"
 version = "0.6.0b1"
 description = "Self-hosted Wagtail newsletter platform (Mailgun + django-newsletter + MJML)."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 keywords = ["wagtail", "django", "newsletter", "email", "mailgun", "mjml", "double-opt-in"]
 classifiers = [
