@@ -1,4 +1,4 @@
-"""Phase 1: the package loads standalone, with no beMore reference."""
+"""Phase 1: the package loads standalone, with no host-project reference."""
 from django.test import SimpleTestCase
 
 

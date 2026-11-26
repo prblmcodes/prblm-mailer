@@ -1,7 +1,7 @@
 """Minimal Django/Wagtail settings to load and test prblm_mailer standalone.
 
 Not a real project — just enough for the app to import, migrate, and run tests
-against, with no reference to beMore.
+against, with no reference to any host project.
 """
 import tempfile
 

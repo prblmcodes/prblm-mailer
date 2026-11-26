@@ -8,6 +8,19 @@ version = "0.6.0b1"
 description = "Self-hosted Wagtail newsletter platform (Mailgun + django-newsletter + MJML)."
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["wagtail", "django", "newsletter", "email", "mailgun", "mjml", "double-opt-in"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Web Environment",
+    "Framework :: Django",
+    "Framework :: Wagtail",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Communications :: Email",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
 # Upper bounds are the newest versions the suite has been run on, not known breakage:
 # widen them only after a green run on both ends of the range (see CLAUDE.md).
 dependencies = [
@@ -18,6 +31,13 @@ dependencies = [
     "mrml>=0.2,<0.3",
     "sorl-thumbnail>=13,<14",   # django-newsletter dependency
 ]
+
+[project.urls]
+Homepage = "https://github.com/prblmcodes/prblm-mailer"
+Documentation = "https://github.com/prblmcodes/prblm-mailer#documentation"
+Changelog = "https://github.com/prblmcodes/prblm-mailer/blob/main/CHANGELOG.md"
+Releases = "https://github.com/prblmcodes/prblm-mailer/releases"
+Issues = "https://github.com/prblmcodes/prblm-mailer/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=8", "pytest-django>=4"]

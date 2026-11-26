@@ -611,7 +611,9 @@ class GroupColumnTests(TestCase):
 
         return import_rows(text, self.newsletter, **kw)
 
-    def tags(self, email="a@x.co"):
+    # Not `tags`: pytest-django reads a test class's `tags` as Django test tags and
+    # crashes collection when it finds a method there.
+    def groups_of(self, email="a@x.co"):
         sub = Subscription.objects.get(email_field=email)
         return {(t.group_name, t.value_label) for t in sub.tags.all()}
 
@@ -619,30 +621,30 @@ class GroupColumnTests(TestCase):
         # The real case: a "Location" column holding "Essex", not "Location: Essex".
         result = self.run_import(
             "email,Location\na@x.co,Essex\n", mapping={"email": "email", "groups": "Location"})
-        self.assertEqual(self.tags(), {("Location", "Essex")})
+        self.assertEqual(self.groups_of(), {("Location", "Essex")})
         self.assertEqual(result.grouped, 1)
 
     def test_the_export_format_still_round_trips(self):
         self.run_import('email,groups\na@x.co,"Instrument: Guitar; City: Leeds"\n')
-        self.assertEqual(self.tags(), {("Instrument", "Guitar"), ("City", "Leeds")})
+        self.assertEqual(self.groups_of(), {("Instrument", "Guitar"), ("City", "Leeds")})
 
     def test_plain_and_prefixed_values_can_be_mixed(self):
         self.run_import(
             'email,Location\na@x.co,"Essex; City: Leeds"\n',
             mapping={"email": "email", "groups": "Location"})
-        self.assertEqual(self.tags(), {("Location", "Essex"), ("City", "Leeds")})
+        self.assertEqual(self.groups_of(), {("Location", "Essex"), ("City", "Leeds")})
 
     def test_a_comma_inside_a_value_is_not_a_separator(self):
         self.run_import(
             'email,Location\na@x.co,"Leeds, West Yorkshire"\n',
             mapping={"email": "email", "groups": "Location"})
-        self.assertEqual(self.tags(), {("Location", "Leeds, West Yorkshire")})
+        self.assertEqual(self.groups_of(), {("Location", "Leeds, West Yorkshire")})
 
     def test_blank_cells_contribute_nothing(self):
         result = self.run_import(
             "email,Location\na@x.co,\nb@x.co,Essex\n",
             mapping={"email": "email", "groups": "Location"})
-        self.assertEqual(self.tags(), set())
+        self.assertEqual(self.groups_of(), set())
         self.assertEqual(result.grouped, 1)        # only the row that had a value
 
     def test_an_empty_column_is_reported_as_nothing_grouped(self):
@@ -656,4 +658,4 @@ class GroupColumnTests(TestCase):
         for value in ("Essex", "Suffolk"):
             self.run_import(f"email,Location\na@x.co,{value}\n",
                             mapping={"email": "email", "groups": "Location"})
-        self.assertEqual(self.tags(), {("Location", "Suffolk")})
+        self.assertEqual(self.groups_of(), {("Location", "Suffolk")})

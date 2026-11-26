@@ -30,7 +30,7 @@ try:
 except ImportError:  # Django < 6.1: nothing of ours can trip it
     RemovedInDjango2028Warning = None
 
-# A site that has moved to Django 6.1's MAILERS, as breakingbeats did.
+# A site that has moved to Django 6.1's MAILERS.
 MAILERS = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}}
 
 

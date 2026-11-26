@@ -2,7 +2,7 @@
 
 The host site sets only what differs, in a single ``PRBLM_MAILER`` dict. Everything
 else falls back to a default here — so a fresh install works with almost no config.
-Never import beMore or any host app from this module; the package must stand alone.
+Never import a host app from this module; the package must stand alone.
 
     from prblm_mailer.conf import get_setting
     brand = get_setting("BRAND_COLOR")

@@ -5,19 +5,23 @@ the decisions, the architecture, and the gotchas found while building and testin
 new session has the reasoning that the code/README don't spell out.
 
 Companion docs in this repo (read them for detail):
-- `README.md` — the complete feature + setup reference (the "ultimate" guide).
-- `INSTALLATION-GUIDE.md` — a 10-minute first-run walkthrough.
-- `PLAN-v1.md` — the phased build plan (all phases done).
-- `prblm-mailer-brief.md` — the original contract.
+- `README.md` — the public front page: features, quick start, links into `docs/`.
+- `docs/*.md` — the user guides (installation, writing newsletters, delivery/Mailgun,
+  signup forms, subscribers/CSV, tracking, public pages, configuration, upgrading,
+  development). User-facing facts belong there; this file keeps the *why*.
+- `CHANGELOG.md` — per release. Update it and `docs/upgrading.md` with every version.
+
+The repo is **public**. Don't name client sites or internal projects in tracked files
+(code, tests, docs, commit messages) — say "the origin app" or "a host site".
 
 ## What this is
-A **self-hosted newsletter platform for Wagtail**, extracted from an app called *beMore*
-into a standalone, `pip`-installable package. Write newsletters in the Wagtail admin from
+A **self-hosted newsletter platform for Wagtail**, extracted from a private Wagtail app (the
+"origin app") into a standalone, `pip`-installable package. Write newsletters in the Wagtail admin from
 email-safe MJML blocks, manage double-opt-in subscribers, group/segment them, send via
 Mailgun, and track opens/clicks. Installs with a settings block — no host code changes.
 
-Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into this package
-(never moved/edited beMore). It now imports nothing from any host project.
+Origin: it was the origin app's internal `mailer/` app, **copied + cleaned** into this package
+(the origin app itself was never modified). It imports nothing from any host project.
 
 ## Hard constraints / conventions
 - **Stands alone.** Never import a host project's code (no `core`, no host models). Config
@@ -25,8 +29,9 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
 - **Cross-version:** must run on **Wagtail 6, 7 and 8** and **Django 5.0–6.1**. This is the
   central constraint — see "Cross-version notes" below. Keeping the EOL floor (Wagtail 6,
   Django 5.0/5.1) was a deliberate choice (2026-11-26), not an oversight.
-- **Local editable install** for now (`pip install -e .`). A built wheel still needs
-  `package_data`/MANIFEST for templates/static/js — see "Open items".
+- **Distributed from GitHub** — hosts pin a git tag or install a release's wheel. Not on PyPI
+  (a deliberate choice for now). Wheel contents depend on `package_data`/MANIFEST — see
+  "Open items".
 - Secrets (Mailgun keys) only ever in the host's env/settings, never in code.
 
 ## Key product decisions (settled)
@@ -165,7 +170,9 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
   image test that compares formats must `cache.clear()` in `setUp`.
 
 ## Releasing
-Bump `version` in `pyproject.toml`, commit (the commit message becomes the release notes),
+Bump `version` in `pyproject.toml`, add the release to `CHANGELOG.md` and its steps to
+`docs/upgrading.md`, bump the pinned tag in the docs' install lines (`grep -rn "@v0\." README.md
+docs`), commit (the commit message becomes the release notes),
 then `git tag -a vX.Y.Z -m "prblm-mailer X.Y.Z" && git push origin main vX.Y.Z`.
 `.github/workflows/release.yml` runs the suite on all three stacks, refuses a tag that
 doesn't match `pyproject.toml`, builds the wheel (failing if it lacks templates/static), and
@@ -184,14 +191,14 @@ pre-releases. A Release already made by hand is kept; only the build files are a
 - **One-click unsubscribe pages** — `views.oneclick_unsubscribe` rendered inline HTML strings;
   now three templates under `prblm_mailer/` extending the same shell. The invalid/expired page
   deliberately doesn't say which of the two it was.
-- **Styled public pages** — ported from bemore's own overrides (`bemore/templates/newsletter/`):
+- **Styled public pages** — ported from the origin app's own `templates/newsletter/` overrides:
   a `common.html` shell plus `subscription_activate`, `_subscribe_activated`,
   `_unsubscribe_activated`, and both `_email_sent` pages; `prblm_mailer/subscription_denied.html`
   now extends the shell too. The activate page is the substantive one: it posts
   `user_activation_code` via `.as_hidden` (the stock template puts that random string in a
   visible text box), short-circuits to "already confirmed"/"already unsubscribed" when the
   link is re-used, and wires the existing `prblm_mailer:deny_subscription` view to a Deny
-  button. Generic where bemore was not: wordmark is `FROM_NAME`, accent is `BRAND_COLOR`, no
+  button. Generic where the origin app was not: wordmark is `FROM_NAME`, accent is `BRAND_COLOR`, no
   Google Fonts fetch. Reads settings via `templatetags/prblm_mailer_tags.py` (`mailer_setting`),
   because those views' context is django-newsletter's. Depends on `prblm_mailer` preceding
   `newsletter` in INSTALLED_APPS — `with_required_apps` orders it that way.
@@ -308,7 +315,7 @@ email-column bug: no damage, no message, no effect.
   so — an empty column now reports "No rows carry a group" instead of looking like it worked.
 
 ## 0.6.0b1 changes (Wagtail 8.1 + Django 6.1)
-Reported from a host upgrade (`PRBLM-MAILER-ISSUES.md`); all fixed, range now Wagtail 6–8 /
+Reported from a host site's upgrade; all fixed, range now Wagtail 6–8 /
 Django 5.0–6.1 / django-newsletter 1.2–1.3.
 - **Subscribers listing 500'd** on Django 6: bare `format_html()` in `groups_label`.
 - **`console`/`local` delivery crashed** under `MAILERS` (test sends, broadcasts *and* opt-in
@@ -327,6 +334,8 @@ Django 5.0–6.1 / django-newsletter 1.2–1.3.
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.
+- **No LICENSE yet** (deferred by the owner, 2026-11-26). The repo is public, but without a
+  license nobody else may legally reuse it. Don't add one without asking.
 - Upper bounds (`wagtail<9`, `Django<6.2`, `django-newsletter<1.4`) are the newest versions
   tested, not known breakage. Widen only after a green run on the new version.
 
