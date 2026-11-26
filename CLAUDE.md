@@ -164,6 +164,14 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
 - Wagtail caches renditions by image pk and SQLite reuses pks after a test's rollback — an
   image test that compares formats must `cache.clear()` in `setUp`.
 
+## Releasing
+Bump `version` in `pyproject.toml`, commit (the commit message becomes the release notes),
+then `git tag -a vX.Y.Z -m "prblm-mailer X.Y.Z" && git push origin main vX.Y.Z`.
+`.github/workflows/release.yml` runs the suite on all three stacks, refuses a tag that
+doesn't match `pyproject.toml`, builds the wheel (failing if it lacks templates/static), and
+publishes the GitHub Release with the wheel + sdist attached — `a`/`b`/`rc` versions as
+pre-releases. A Release already made by hand is kept; only the build files are added.
+
 ## 0.2.0b1 changes (this round)
 - **Conditional signup** — see `form_pages.py` above.
 - **Site domain self-heal** — `subscriptions._reconcile_site_domain()` copies the host from
