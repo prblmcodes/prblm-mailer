@@ -17,8 +17,13 @@ from prblm_mailer.tokens import oneclick_token
 
 
 def _locmem():
-    """A local in-memory mail connection, so console/local sends land in outbox."""
-    return mail.get_connection("django.core.mail.backends.locmem.EmailBackend")
+    """A local in-memory mail connection, so console/local sends land in outbox.
+
+    Built directly: get_connection(path) raises on Django 6.1 once MAILERS is set.
+    """
+    from django.core.mail.backends.locmem import EmailBackend
+
+    return EmailBackend(alias="test")
 
 
 def a_newsletter():

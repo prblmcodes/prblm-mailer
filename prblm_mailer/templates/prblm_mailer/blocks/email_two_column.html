@@ -1,4 +1,4 @@
-{% load wagtailimages_tags %}{% image value.image width-1000 as img %}{% comment %}
+{% load prblm_mailer_tags %}{% email_image value.image "width-1000" as img %}{% comment %}
   A real two-cell table. The IMAGE cell is always first in the source, so when the
   cells stack on mobile the image is always on TOP, then the text — whatever side
   it's on for desktop. On desktop, image-on-right is done with direction:rtl on the

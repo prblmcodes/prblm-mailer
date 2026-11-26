@@ -4,7 +4,7 @@ A 10-minute walkthrough to install the plugin and see it working end to end, wit
 **nothing real sent**. For the full feature reference (delivery modes, forms/grouping,
 tracking, CSV, going live) see `README.md`; this is just the quickest safe first run.
 
-Works on **Wagtail 6 or 7 / Django 5.0–5.2**. Every change below goes in the **host site**,
+Works on **Wagtail 6, 7 or 8 / Django 5.0–6.1**. Every change below goes in the **host site**,
 never in the plugin.
 
 ---
@@ -148,7 +148,7 @@ or won't open over https, see §2 and the troubleshooting list below.
 
 ## 7. When you’re ready to send for real
 
-Follow **README §11 (Going live with Mailgun)**: set `EMAIL_BACKEND` + the `ANYMAIL` block
+Follow **README §11 (Going live with Mailgun)**: set `EMAIL_BACKEND` (or, on Django 6.1+, `MAILERS["default"]`) + the `ANYMAIL` block
 (EU vs US URL matters), set `PRBLM_MAILER["DELIVERY"] = "mailgun"`, point the Mailgun webhooks
 at `/anymail/mailgun/tracking/`, and run `python manage.py mailgun_doctor` to check the setup.
 Then send yourself a real test before the first real send.

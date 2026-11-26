@@ -22,8 +22,9 @@ Origin: it was beMore's internal `mailer/` app. We **copied + cleaned** it into 
 ## Hard constraints / conventions
 - **Stands alone.** Never import a host project's code (no `core`, no host models). Config
   comes from a single `PRBLM_MAILER` settings dict via `prblm_mailer/conf.py::get_setting`.
-- **Cross-version:** must run on **Wagtail 6 and 7** and **Django 5.0–5.2**. This is the
-  central constraint — see "Cross-version notes" below.
+- **Cross-version:** must run on **Wagtail 6, 7 and 8** and **Django 5.0–6.1**. This is the
+  central constraint — see "Cross-version notes" below. Keeping the EOL floor (Wagtail 6,
+  Django 5.0/5.1) was a deliberate choice (2026-11-26), not an oversight.
 - **Local editable install** for now (`pip install -e .`). A built wheel still needs
   `package_data`/MANIFEST for templates/static/js — see "Open items".
 - Secrets (Mailgun keys) only ever in the host's env/settings, never in code.
@@ -128,7 +129,7 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
 - **Host `process_form_submission`**: mixin must be the FIRST base; `return` the submission
   from `super()` (don't `objects.create` a second one); read optional keys with `.get()`.
 
-## Cross-version notes (Wagtail 6 vs 7)
+## Cross-version notes (Wagtail 6 / 7 / 8, Django 5.0–6.1)
 - `PreviewableMixin` moved modules (6: `wagtail.models`, 7: `wagtail.models.preview`).
 - StreamField migration serialization differs — the **`0001` migration was generated under
   Wagtail 6** (older format) so it loads on **both** 6 and 7. If regenerating a StreamField
@@ -137,6 +138,17 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
   fixtures).
 - The test app's page migration pins `('wagtailcore', '__first__')` — a pinned number breaks
   the other Wagtail version.
+- **Django 6.0** raises on `format_html()` with nothing to format — use `mark_safe` for a
+  constant. `test_compat` AST-scans the package for the bare call on every version.
+- **Django 6.1 `MAILERS`**: once a host defines it, `get_connection(path)` raises
+  `RuntimeError`, and `get_connection()`, `connection=` on a message, and building a backend
+  without `alias=` are all `RemovedInDjango2028Warning`. So `sending` builds local backends
+  as classes with `alias=LOCAL_MAILER_ALIAS` (older Django ignores the kwarg), takes the
+  default from `mailers.default` when it exists, and sends with `connection.send_messages()`
+  via `_deliver()` — one code path, warning-free on every version.
+- **Wagtail 8** stopped converting WebP/AVIF renditions to PNG (BMP/HEIC/static GIF still
+  convert). Email blocks use `{% email_image %}` (`prblm_mailer_tags`), never bare `{% image %}`
+  — it adds `format-png` for those two sources only, i.e. Wagtail 7's behaviour.
 
 ## Testing
 - Suite in `tests/` (settings `tests.settings`; a throwaway `tests/testapp` exercises the form
@@ -144,8 +156,13 @@ PRBLM_MAILER = {"NEWSLETTER_SLUG": "main", "FROM_EMAIL": "...", "FROM_NAME": "..
   ```bash
   DJANGO_SETTINGS_MODULE=tests.settings PYTHONPATH=. python -m django test tests
   ```
-- **Always run on both Wagtail versions** before trusting a change (use two virtualenvs, one
-  with Wagtail 6.x, one with 7.x). Current count: ~70 tests, green on both.
+- **Always run on both ends of the range** before trusting a change: Wagtail 6.0 + Django 5.0
+  and Wagtail 8.1 + Django 6.1 (+ django-newsletter 1.3), ideally Wagtail 7 + Django 5.2 too.
+  `uv venv -p 3.12` + `uv pip install -e . "wagtail>=6.0,<6.1" "Django>=5.0,<5.1"` builds one
+  in seconds. Current count: 205 tests, green on all three (the 4 Django 6.1-only tests skip
+  on older Django).
+- Wagtail caches renditions by image pk and SQLite reuses pks after a test's rollback — an
+  image test that compares formats must `cache.clear()` in `setUp`.
 
 ## 0.2.0b1 changes (this round)
 - **Conditional signup** — see `form_pages.py` above.
@@ -282,6 +299,17 @@ email-column bug: no damage, no message, no effect.
 - `ImportResult.grouped` counts rows that carried a usable group, and the mapping screen says
   so — an empty column now reports "No rows carry a group" instead of looking like it worked.
 
+## 0.6.0b1 changes (Wagtail 8.1 + Django 6.1)
+Reported from a host upgrade (`PRBLM-MAILER-ISSUES.md`); all fixed, range now Wagtail 6–8 /
+Django 5.0–6.1 / django-newsletter 1.2–1.3.
+- **Subscribers listing 500'd** on Django 6: bare `format_html()` in `groups_label`.
+- **`console`/`local` delivery crashed** under `MAILERS` (test sends, broadcasts *and* opt-in
+  emails in local dev). `mailgun` mode was never affected. Side effect of the fix: the local
+  SMTP connection no longer inherits the host's `EMAIL_HOST_USER`/TLS — it never should have.
+- **WebP/AVIF renditions** went out as-is on Wagtail 8 → `email_image` tag (see above).
+- django-newsletter 1.3's `NEWSLETTER_MAILER` doesn't touch us: the opt-in email goes through
+  `send_optin`, not its `send_activation_email`.
+
 ## Open / deferred items
 - ~~Wheel packaging~~ **done** (2026-09-08): `[tool.setuptools.package-data]` in
   `pyproject.toml` + `MANIFEST.in`. Without it a built wheel shipped **zero** templates and no
@@ -291,8 +319,8 @@ email-column bug: no damage, no message, no effect.
 - Optional niceties discussed but not built: a **StreamField signup block** + public
   subscribe view, **async sending** for very large lists, a **preference centre**, a
   **view-in-browser** link.
-- **Wagtail 8 / Django 6 both shipped** and `pyproject.toml` excludes them (`wagtail<8`,
-  `Django<5.3`). Nothing is known to break; the bounds have simply not been tested or widened.
+- Upper bounds (`wagtail<9`, `Django<6.2`, `django-newsletter<1.4`) are the newest versions
+  tested, not known breakage. Widen only after a green run on the new version.
 
 ## Style
 Match the surrounding code: terse, purposeful comments that explain *why* (the existing code

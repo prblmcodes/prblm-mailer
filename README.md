@@ -4,7 +4,7 @@ A self-hosted **newsletter platform for Wagtail**. Write newsletters in the Wagt
 from email-safe blocks, manage double-opt-in subscribers, group/segment them, send through
 Mailgun, and track opens and clicks — all from a single `pip install` and a settings block.
 
-Works on **Wagtail 6 and 7** (Django 5.0–5.2).
+Works on **Wagtail 6, 7 and 8** with **Django 5.0–6.1** (any pairing Wagtail itself supports).
 
 ## What you get
 
@@ -252,7 +252,15 @@ see *that* one locally too, point Django at the same inbox:
 ```python
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 EMAIL_HOST, EMAIL_PORT = "localhost", 1025   # mailcrab/mailpit
+
+# or, on Django 6.1+ with MAILERS:
+MAILERS = {"default": {"BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+                       "OPTIONS": {"host": "localhost", "port": 1025}}}
 ```
+
+`console` and `local` build their own connection from `LOCAL_SMTP_HOST`/`LOCAL_SMTP_PORT`
+and never read `EMAIL_*` or `MAILERS` — so a local inbox can't pick up your real SMTP login,
+and they keep working once a site moves to Django 6.1's `MAILERS`.
 
 **The confirmation (opt-in) email — a few django-newsletter details.** Its **content and
 activation link are django-newsletter’s**, not the plugin’s (the plugin only routes *how* it’s
@@ -738,7 +746,14 @@ ANYMAIL = {
     "MAILGUN_WEBHOOK_SIGNING_KEY": os.environ["MAILGUN_WEBHOOK_SIGNING_KEY"],
     "WEBHOOK_SECRET": os.environ["ANYMAIL_WEBHOOK_SECRET"],   # "user:pass"
 }
+# Django 6.1+ with MAILERS: make Anymail the *default* mailer instead of EMAIL_BACKEND —
+# `mailgun` mode sends through the site's default mailer, whichever way it is defined.
+# MAILERS = {"default": {"BACKEND": "anymail.backends.mailgun.EmailBackend"}}
 ```
+
+**Images in email.** Every image block sends WebP and AVIF uploads as PNG (Outlook can't
+display WebP); JPEG, PNG and GIF go out in the format they were uploaded in. Wagtail ≤7 did
+this conversion itself; Wagtail 8 stopped, so the blocks now ask for it explicitly.
 
 Set `PRBLM_MAILER["DELIVERY"] = "mailgun"`, send yourself a real test, then send for real:
 Send page → Who gets it → Proceed → confirm count → Send now. Keep secrets in the
@@ -775,14 +790,14 @@ DJANGO_SETTINGS_MODULE=tests.settings python -m django test tests
 # or, with pytest installed:  pip install -e ".[test]" && pytest
 ```
 
-114 tests, run against **both** Wagtail 6 and 7 — the two differ in admin internals often
-enough that a green run on one proves little about the other.
-
-The suite runs on both Wagtail 6 and 7.
+205 tests. Run them on **both ends** of the supported range — at least Wagtail 6 + Django 5.0
+and Wagtail 8 + Django 6.1 (Wagtail 7 + Django 5.2 is a useful middle). The versions differ
+in admin internals and the mail API often enough that a green run on one proves little about
+another. The Django 6.1-only tests (`MAILERS`, deprecations) skip themselves on older Django.
 
 ## Cross-version note
 
-The shipped migrations work on Wagtail 6 and 7. If you install into a host **older** than the
+The shipped migrations work on Wagtail 6, 7 and 8. If you install into a host **older** than the
 version the migrations were generated on and a StreamField migration won’t load, regenerate
 the initial migration against your host’s Wagtail version.
 

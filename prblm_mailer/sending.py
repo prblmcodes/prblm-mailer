@@ -15,6 +15,8 @@ import socket
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.core.mail import EmailMultiAlternatives, get_connection
+from django.core.mail.backends.console import EmailBackend as ConsoleBackend
+from django.core.mail.backends.smtp import EmailBackend as SMTPBackend
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import strip_tags
@@ -27,6 +29,15 @@ from .models import Broadcast
 from .tokens import oneclick_token
 
 logger = logging.getLogger(__name__)
+
+try:  # Django 6.1+: named mailers replace EMAIL_BACKEND and get_connection().
+    from django.core.mail import mailers
+except ImportError:
+    mailers = None
+
+# Handed to the backends we build ourselves. Django 6.1 treats a backend built without
+# an alias as a deprecated direct construction; older versions ignore the argument.
+LOCAL_MAILER_ALIAS = "prblm_mailer_local"
 
 BATCH_SIZE = 1000  # Mailgun's per-batch recipient limit
 
@@ -132,15 +143,37 @@ def _check_smtp_reachable(host, port):
 
 
 def _local_connection(mode):
-    """A mail connection for a local mode: the console, or SMTP to a local inbox."""
+    """A mail connection for a local mode: the console, or SMTP to a local inbox.
+
+    Built from the backend classes, not get_connection(path): Django 6.1 refuses a
+    backend path once a site defines MAILERS. The credentials and TLS are spelled out
+    so a local inbox never inherits the host's real SMTP login from EMAIL_* settings.
+    """
     if mode == "console":
-        return get_connection("django.core.mail.backends.console.EmailBackend")
+        return ConsoleBackend(alias=LOCAL_MAILER_ALIAS)
     host = get_setting("LOCAL_SMTP_HOST")
     port = int(get_setting("LOCAL_SMTP_PORT"))
     _check_smtp_reachable(host, port)
-    return get_connection(
-        "django.core.mail.backends.smtp.EmailBackend", host=host, port=port,
+    return SMTPBackend(
+        host=host, port=port, username="", password="", use_tls=False, use_ssl=False,
+        alias=LOCAL_MAILER_ALIAS,
     )
+
+
+def _default_connection():
+    """The site's own mailer: MAILERS["default"] on Django 6.1+, else EMAIL_BACKEND."""
+    return mailers.default if mailers is not None else get_connection()
+
+
+def _deliver(message, connection=None):
+    """Send one message through `connection`, or the site's default mailer.
+
+    Passing the connection here rather than as `connection=` on the message keeps
+    clear of Django 6.1's deprecation of that argument, on every version.
+    """
+    if connection is None:
+        connection = _default_connection()
+    connection.send_messages([message])
 
 
 def _send_local(broadcast, html, subscriptions, connection):
@@ -160,7 +193,6 @@ def _send_local(broadcast, html, subscriptions, connection):
             body=strip_tags(personal_html),
             from_email=_from_email(),
             to=[subscription.email],
-            connection=connection,
         )
         message.attach_alternative(personal_html, "text/html")
         message.extra_headers = {
@@ -170,7 +202,7 @@ def _send_local(broadcast, html, subscriptions, connection):
         if reply_to:
             message.reply_to = [reply_to]
         try:
-            message.send()
+            _deliver(message, connection)
             sent += 1
         except Exception:  # noqa: BLE001 — one bad address must not stop the run
             failed += 1
@@ -181,21 +213,20 @@ def _send_local(broadcast, html, subscriptions, connection):
 def _send_mailgun(broadcast, html, subscriptions):
     """Send via Anymail's Mailgun batch API. Returns (sent, failed)."""
     sent = failed = 0
-    connection = get_connection()
+    connection = _default_connection()
     for i in range(0, len(subscriptions), BATCH_SIZE):
         batch = subscriptions[i : i + BATCH_SIZE]
         message = _build_message(
-            subject=broadcast.subject, html=html, subscriptions=batch,
-            connection=connection, broadcast=broadcast,
+            subject=broadcast.subject, html=html, subscriptions=batch, broadcast=broadcast,
         )
-        message.send()
+        _deliver(message, connection)
         recipients = message.anymail_status.recipients
         sent += len(recipients)
         failed += sum(1 for r in recipients.values() if r.status in ("failed", "rejected"))
     return sent, failed
 
 
-def _build_message(*, subject, html, subscriptions, connection=None, broadcast=None):
+def _build_message(*, subject, html, subscriptions, broadcast=None):
     """One AnymailMessage covering a batch of up to BATCH_SIZE recipients."""
     merge_data = {s.email: subscription_context(s) for s in subscriptions}
 
@@ -204,7 +235,6 @@ def _build_message(*, subject, html, subscriptions, connection=None, broadcast=N
         body=strip_tags(html),  # plain-text fallback
         from_email=_from_email(),
         to=list(merge_data.keys()),
-        connection=connection,
     )
     message.attach_alternative(html, "text/html")
     message.merge_data = merge_data
@@ -250,10 +280,9 @@ def send_test(broadcast, email):
             body=strip_tags(personal_html),
             from_email=_from_email(),
             to=[email],
-            connection=_local_connection(mode),
         )
         message.attach_alternative(personal_html, "text/html")
-        message.send()
+        _deliver(message, _local_connection(mode))
         return
 
     message = AnymailMessage(
@@ -267,7 +296,7 @@ def send_test(broadcast, email):
         "name": "there", "unsubscribe_url": "#", "oneclick_url": "#",
     }
     message.metadata = {"broadcast_id": str(broadcast.pk), "test": "1"}
-    message.send()
+    _deliver(message)
 
 
 def _optin_html(action, html_t, context):
@@ -342,11 +371,11 @@ def send_optin(subscription, action="subscribe"):
     connection = _local_connection(mode) if mode in ("console", "local") else None
     message = EmailMultiAlternatives(
         subject, text, from_email=newsletter.get_sender(),
-        to=[subscription.email], connection=connection,
+        to=[subscription.email],
     )
     if html:
         message.attach_alternative(html, "text/html")
-    message.send()
+    _deliver(message, connection)
 
 
 def send_broadcast(broadcast_id):

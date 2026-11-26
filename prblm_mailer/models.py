@@ -286,11 +286,13 @@ class Subscriber(Subscription):
 
     def groups_label(self):
         """The subscriber's groups as pills — read-only."""
-        from django.utils.html import format_html, format_html_join
+        from django.utils.html import format_html_join
+        from django.utils.safestring import mark_safe
 
         tags = self.tags.all()
         if not tags:
-            return format_html('<span style="color:#9aa0a6">—</span>')
+            # Not format_html: Django 6 raises on a call with nothing to format.
+            return mark_safe('<span style="color:#9aa0a6">—</span>')
         return format_html_join(
             " ", '<span style="display:inline-block;padding:2px 9px;border-radius:10px;'
                  'font-size:12px;background:#eceef1;color:#3a3a3a;white-space:nowrap">'
